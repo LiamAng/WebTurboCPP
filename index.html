@@ -104,6 +104,9 @@
   .native-keyboard-input { position: fixed; z-index: 1; left: 50%; top: 50%; width: 1px; height: 1px; padding: 0; border: 0; opacity: 0; pointer-events: none; font-size: 16px; }
   .input-toast { position: fixed; z-index: 1000; left: 50%; bottom: max(20px, env(safe-area-inset-bottom)); transform: translate(-50%, 12px); max-width: calc(100vw - 32px); padding: 12px 18px; color: #fff; background: #202329; border: 1px solid #535b69; border-radius: 8px; box-shadow: 0 8px 30px rgb(0 0 0 / .45); text-align: center; opacity: 0; pointer-events: none; transition: opacity .18s ease, transform .18s ease; }
   .input-toast.visible { opacity: 1; transform: translate(-50%, 0); }
+  .esc-hint { position: fixed; z-index: 1000; right: max(12px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); padding: 8px 12px; color: #cdd3de; background: rgb(32 35 41 / .88); border: 1px solid #535b69; border-radius: 8px; font-size: 12px; line-height: 1.4; text-align: right; pointer-events: none; }
+  .esc-hint kbd { display: inline-block; min-width: 18px; padding: 1px 5px; color: #fff; background: #373b44; border: 1px solid #5a6270; border-radius: 4px; font: 11px/1.5 system-ui, sans-serif; text-align: center; }
+  .esc-hint[hidden] { display: none !important; }
   @media (pointer: coarse) {
     #fullscreen { display: none; }
     [data-special-row] { display: none; }
@@ -156,11 +159,12 @@
       </div>
       <button id="capture-overlay" class="capture-overlay" type="button" hidden>
         <strong>Click to capture mouse and keyboard</strong>
-        <span>Hold Esc to release the mouse</span>
+        <span>Tap Esc to cancel · hold Esc to release mouse</span>
       </button>
     </div>
   </div>
   <div id="input-toast" class="input-toast" role="status" aria-live="polite" hidden></div>
+<div id="esc-hint" class="esc-hint" aria-hidden="true" hidden><kbd>Esc</kbd> release mouse · <kbd>Ctrl</kbd>+<kbd>`</kbd> send ESC</div>
   <details id="touch-keys" class="touch-keys">
     <summary aria-label="Toggle on-screen keyboard"></summary>
     <button id="native-keyboard-open" class="native-keyboard-open" type="button" aria-label="Open phone keyboard">
@@ -248,6 +252,7 @@ let toastTimer = 0;
 let escapeHoldTimer = 0;
 let escapeHoldAvailable = false;
 let escapeReleaseTriggered = false;
+let escapeDownSent = false;
 let wheelRemainder = 0;
 const bundleUrl = "./turboc.jsdos?v=5";
 const changesKey = "turbo-c-project-files-v5.changes";
@@ -397,6 +402,14 @@ const tabPress = () => {
   }, 40);
 };
 
+const escPress = () => {
+  if (!ci) return;
+  ci.sendKeyEvent(256, true);
+  setTimeout(() => {
+    if (ci) ci.sendKeyEvent(256, false);
+  }, 40);
+};
+
 const setSaveStatus = status => {
   const button = el("save");
   button.dataset.saveState = status;
@@ -432,6 +445,11 @@ const captureOverlay = el("capture-overlay");
 captureOverlay.hidden = true;
 el("screen-overlay").hidden = false;
 el("dos").inert = desktopPointer;
+const escHint = el("esc-hint");
+const syncEscHint = () => {
+  const captured = el("screen").classList.contains("pointer-captured");
+  escHint.hidden = !(desktopPointer && captured && !escapeHoldAvailable);
+};
 function requestMouseCapture() {
   if (!desktopPointer || !player) return;
   const canvas = el("dos").querySelector("canvas");
@@ -445,15 +463,17 @@ function requestMouseCapture() {
     try {
       navigator.keyboard.lock(["Escape"]).then(() => {
         escapeHoldAvailable = true;
+        syncEscHint();
         if (el("screen").classList.contains("pointer-captured")) {
-          captureOverlay.querySelector("span").textContent = "Hold Esc to release the mouse";
+          captureOverlay.querySelector("span").textContent = "Tap Esc to cancel · hold Esc to release mouse";
           showToast("Mouse and keyboard captured. Hold Esc to release.");
         }
       }).catch(() => {
         escapeHoldAvailable = false;
+        syncEscHint();
         if (el("screen").classList.contains("pointer-captured")) {
-          captureOverlay.querySelector("span").textContent = "Press Esc to release the mouse";
-          showToast("This browser releases the mouse as soon as Esc is pressed.");
+          captureOverlay.querySelector("span").textContent = "Press Esc to release mouse · Ctrl+` sends Esc";
+          showToast("Esc releases the mouse here. Press Ctrl+` for Turbo C++ Esc.");
         }
       });
     } catch (error) {}
@@ -511,6 +531,7 @@ document.addEventListener("pointerlockchange", () => {
   const screen = el("screen");
   const captured = !!document.pointerLockElement && screen.contains(document.pointerLockElement);
   screen.classList.toggle("pointer-captured", captured);
+  syncEscHint();
   el("screen-overlay").hidden = !desktopPointer || captured;
   captureOverlay.hidden = !desktopPointer || captured;
   el("dos").inert = desktopPointer && !captured && !el("dos").contains(el("screen-overlay"));
@@ -518,8 +539,8 @@ document.addEventListener("pointerlockchange", () => {
   if (captured) {
     pointerWasCaptured = true;
     screen.focus({ preventScroll: true });
-    captureOverlay.querySelector("span").textContent = escapeHoldAvailable ? "Hold Esc to release the mouse" : "Press Esc to release the mouse";
-    showToast(escapeHoldAvailable ? "Mouse and keyboard captured. Hold Esc to release." : "Mouse captured. Press Esc to release.");
+    captureOverlay.querySelector("span").textContent = escapeHoldAvailable ? "Tap Esc to cancel · hold Esc to release mouse" : "Press Esc to release mouse · Ctrl+` sends Esc";
+    showToast(escapeHoldAvailable ? "Mouse and keyboard captured. Hold Esc to release." : "Mouse captured. Use Esc and Ctrl+` as shown.");
   } else if (pointerWasCaptured) {
     clearTimeout(escapeHoldTimer);
     escapeHoldTimer = 0;
@@ -552,13 +573,31 @@ document.addEventListener("keydown", event => {
     event.stopImmediatePropagation();
     return;
   }
+  const escChord = event.code === "Backquote" || event.key === "`" || event.key === "~";
+  if (!escapeHoldAvailable && event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey && escChord) {
+    // Fallback for browsers without Keyboard Lock (Firefox, etc.): plain Esc is
+    // reserved by the browser to release the mouse, so Ctrl+` sends Esc to
+    // Turbo C++ instead. Chord chosen because Turbo C++'s editor keymaps (CUA +
+    // WordStar) never bind it, and no browser or OS reserves Ctrl+backquote.
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    escPress();
+    return;
+  }
   if (event.key === "Escape" && escapeHoldAvailable) {
     event.preventDefault();
     event.stopImmediatePropagation();
     if (!escapeHoldTimer && !escapeReleaseTriggered) {
+      // Esc reaches Turbo C++ even while captured: press down immediately.
+      // Releasing before the threshold completes a tap; holding releases the mouse.
+      if (ci && !escapeDownSent) {
+        ci.sendKeyEvent(256, true);
+        escapeDownSent = true;
+      }
       showToast("Keep holding Esc to release the mouse...");
       escapeHoldTimer = setTimeout(() => {
         escapeHoldTimer = 0;
+        escapeDownSent = false;
         escapeReleaseTriggered = true;
         if (document.pointerLockElement) document.exitPointerLock();
       }, 900);
@@ -577,9 +616,14 @@ document.addEventListener("keyup", event => {
   event.preventDefault();
   event.stopImmediatePropagation();
   if (escapeHoldTimer) {
+    // Quick tap: complete the Esc press inside Turbo C++.
     clearTimeout(escapeHoldTimer);
     escapeHoldTimer = 0;
-    showToast("Keep holding Esc to release the mouse.");
+    if (ci && escapeDownSent) {
+      ci.sendKeyEvent(256, false);
+      escapeDownSent = false;
+      showToast("Esc sent. Hold Esc to release the mouse.");
+    }
   }
 }, true);
 
@@ -778,6 +822,14 @@ document.querySelectorAll("[data-key]").forEach(key => {
 });
 addEventListener("blur", () => {
   releaseModifiers();
+  if (escapeDownSent) {
+    if (ci) ci.sendKeyEvent(256, false);
+    escapeDownSent = false;
+  }
+  if (escapeHoldTimer) {
+    clearTimeout(escapeHoldTimer);
+    escapeHoldTimer = 0;
+  }
   if (touchCursorPointerId !== null) {
     touchCursorPointerId = null;
     touchCursorMoved = false;
