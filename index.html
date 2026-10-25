@@ -5,11 +5,16 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Turbo C++</title>
 <link rel="stylesheet" href="https://v8.js-dos.com/latest/js-dos.css">
+<link rel="preconnect" href="https://v8.js-dos.com" crossorigin>
+<link rel="preload" href="https://v8.js-dos.com/latest/emulators/emulators.js" as="script" crossorigin>
+<link rel="preload" href="https://v8.js-dos.com/latest/js-dos.js" as="script" crossorigin>
+<link rel="preload" href="./turboc.jsdos?v=3" as="fetch" crossorigin>
 <style>
-  :root { color-scheme: dark; }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: #101114; color: #e8e9ed; font: 15px/1.5 system-ui, sans-serif; }
-  .shell { max-width: 1120px; margin: 0 auto; padding: 20px; }
+  :root { color-scheme: dark; min-height: 100%; background: #101114; }
+  * { box-sizing: border-box; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+  html { min-height: 100%; background: #101114; }
+  body { margin: 0; min-height: 100vh; min-height: 100dvh; width: 100%; background: #101114; color: #e8e9ed; font: 15px/1.5 system-ui, sans-serif; }
+  .shell { width: 100%; min-height: 100vh; min-height: 100dvh; max-width: 1120px; margin: 0 auto; padding: 20px; }
   .bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 12px; background: #1b1d22; border: 1px solid #30333b; border-radius: 12px 12px 0 0; }
   .bar-label { font-weight: 700; margin: 0 auto 0 4px; }
   button, select { font: inherit; }
@@ -20,40 +25,110 @@
   button.primary:hover:not(:disabled) { background: #3c6bd0; }
   button:focus-visible, summary:focus-visible, select:focus-visible { outline: 2px solid #8bb4ff; outline-offset: 2px; }
   .icon-button { display: grid; place-items: center; width: 42px; height: 42px; padding: 0; }
+  .icon-button { position: relative; }
   .icon-button svg { width: 21px; height: 21px; }
   .icon-button img { display: block; width: 21px; height: 21px; }
-  #screen { overflow: hidden; border: 1px solid #30333b; border-top: 0; border-radius: 0 0 12px 12px; background: #000; }
+  .icon-button img.white-icon { filter: brightness(0) invert(1); }
+  .save-indicator { position: absolute; top: 2px; right: 2px; width: 9px; height: 9px; border: 1.5px solid #1b1d22; border-radius: 50%; opacity: 0; }
+  #save[data-save-state="success"] .save-indicator { background: #38d98a; opacity: 1; }
+  #save[data-save-state="error"] .save-indicator { background: #ff5263; opacity: 1; }
+  #screen { position: relative; overflow: hidden; min-height: 360px; border: 1px solid #30333b; border-top: 0; border-radius: 0 0 12px 12px; background: #000; }
+  #screen.touch-cursor-mode { touch-action: none; }
+  #screen:focus { outline: 2px solid #8bb4ff; outline-offset: 2px; }
+  #screen.pointer-captured:focus { outline: 0; }
+  #screen.pointer-captured, #screen.pointer-captured * { cursor: none !important; }
+  #dos .pointer-events-none:has(.text-xl) { display: none !important; }
+  .screen-overlay { position: absolute; z-index: 5; inset: 0; display: grid; place-items: center; padding: 0; background: rgb(8 9 12 / .92); color: #fff; text-align: center; }
+  .screen-overlay.fullscreen-overlay { position: fixed; z-index: 2147483647; inset: 0; }
+  .screen-overlay[hidden], .screen-overlay [hidden] { display: none !important; }
+  .loading-state, .capture-overlay { display: grid; justify-items: center; align-content: center; gap: 10px; width: 100%; height: 100%; padding: 0; }
+  .loading-state span:last-child, .capture-overlay span { color: #b9bdc8; font-size: 13px; }
+  .capture-overlay { border: 0; border-radius: 0; background: transparent; color: #fff; text-align: center; cursor: pointer; }
+  .capture-overlay:disabled { opacity: 1; cursor: wait; }
+  .capture-overlay strong { font-size: clamp(16px, 2.5vw, 22px); }
+  .loading-spinner { width: 34px; height: 34px; border: 3px solid #454a55; border-top-color: #8bb4ff; border-radius: 50%; animation: loading-spin .8s linear infinite; }
+  @keyframes loading-spin { to { transform: rotate(360deg); } }
   #dos { width: 100%; height: min(62vh, 640px); min-height: 360px; margin: 0 auto; }
   #dos:empty { display: none; }
-  #status { color: #b9bdc8; font-size: 13px; min-height: 20px; margin: 10px 4px 0; }
-  #help { max-width: 760px; margin: 24px auto; padding: 0 16px; color: #b9bdc8; }
-  #help p { margin: 0; }
+  #dos .sidebar, #dos .sidebar-thin, #dos .sidebar-slider, #dos .w-2.flex-shrink-0 { display: none !important; }
   .touch-keys { margin-top: 12px; border: 1px solid #30333b; border-radius: 10px; background: #1b1d22; }
   .touch-keys summary { padding: 11px 14px; cursor: pointer; font-weight: 600; touch-action: manipulation; }
-  .keypad { padding: 8px; display: grid; gap: 5px; }
-  .key-row { display: flex; gap: 4px; justify-content: center; }
-  .key-row button { min-width: 0; min-height: 42px; flex: 1; padding: 5px 2px; font-size: 13px; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
-  .key-row button.wide { flex: 1.7; }
-  .key-row button.space { flex: 4; }
+  .keypad { padding: 8px; display: grid; gap: 5px; overflow-x: hidden; }
+  .key-row { display: flex; gap: 4px; justify-content: flex-start; overflow-x: auto; overscroll-behavior-inline: contain; scrollbar-width: thin; }
+  .key-row button { min-width: 40px; min-height: 46px; flex: 0 0 40px; padding: 5px 3px; font-size: 13px; touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+  .key-row button.wide { flex-basis: 64px; }
+  .key-row button.space { flex: 1 0 180px; }
+  .key-row button.double-label { display: grid; grid-template-rows: 1fr 1fr; align-items: center; line-height: 1; padding: 4px; }
+  .key-row button.double-label span:first-child { justify-self: start; align-self: start; color: #aeb4c0; font-size: 10px; }
+  .key-row button.double-label span:last-child { justify-self: center; align-self: end; }
   .key-row button.active { background: #315cba; border-color: #8bb4ff; }
-  .key-row.function-row { overflow-x: auto; justify-content: flex-start; }
-  .key-row.function-row button { flex: 0 0 38px; }
+  .key-row.function-row button { flex-basis: 44px; }
+  .key-row button:active { background: #3c6bd0; }
+  .touch-keys.native-mode .keyboard-text-row { display: none; }
+  .touch-keys.native-mode [data-special-row] { display: flex; }
+  .native-keyboard-open { display: none; width: 48px; height: 48px; margin: 8px; padding: 0; place-items: center; }
+  .native-keyboard-open img { display: block; width: 24px; height: 24px; filter: brightness(0) invert(1); }
+  .touch-keys.native-mode { position: relative; }
+  .touch-keys.native-mode summary { min-height: 24px; height: 24px; padding: 0 8px; }
+  .touch-keys.native-mode .native-keyboard-open { position: absolute; z-index: 1; top: 4px; right: 8px; display: grid; width: 36px; height: 36px; margin: 0; }
+  .touch-keys.native-mode .native-keyboard-open img { width: 20px; height: 20px; }
+  @media (pointer: fine) {
+    .keypad { width: 880px; max-width: 100%; margin-inline: auto; gap: 5px; }
+    .key-row { width: 100%; align-items: center; justify-content: center; gap: 4px; overflow-x: auto; }
+    .key-row button { flex-basis: 44px; min-height: 46px; font-size: 14px; }
+    .key-row button.wide { flex-basis: 72px; }
+    .key-row button.space { flex: 0 0 210px; }
+    .key-row.function-row button { flex-basis: 44px; }
+    .key-row.function-row button:nth-child(6), .key-row.function-row button:nth-child(10) { margin-left: 10px; }
+    .key-row.function-row [data-key="260"] { margin-left: 20px; }
+    .arrow-cluster { display: flex; gap: 4px; }
+    .arrow-cluster button { min-width: 44px; min-height: 46px; padding: 4px; }
+    .keypad > .pc-bottom-row { justify-content: center; }
+    .keypad > .key-row[data-special-row]:not(.function-row) { display: none; }
+    .key-row button:disabled { opacity: .78; }
+  }
+  @media (pointer: coarse) { [data-pc-row], [data-pc-key] { display: none; } }
   dialog { width: min(460px, calc(100% - 28px)); padding: 0; color: #e8e9ed; background: #1b1d22; border: 1px solid #424650; border-radius: 10px; }
   dialog::backdrop { background: rgb(0 0 0 / .65); }
   .settings-head, .settings-body { padding: 16px; }
   .settings-head { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #424650; }
   .settings-head h2 { margin: 0; font-size: 18px; }
-  .settings-head button { width: 36px; height: 36px; padding: 0; font-size: 20px; }
+  .settings-head button { display: grid; place-items: center; width: 36px; height: 36px; padding: 0; line-height: 0; }
+  .settings-head button img { display: block; width: 18px; height: 18px; }
   .setting { display: grid; gap: 6px; margin-bottom: 16px; }
   .setting select { width: 100%; min-height: 42px; padding: 8px; color: #e8e9ed; background: #292c33; border: 1px solid #555b68; border-radius: 6px; }
+  .range-setting { display: flex; align-items: center; gap: 12px; min-height: 42px; padding: 0 10px; background: #292c33; border: 1px solid #555b68; border-radius: 6px; }
+  .range-setting input { flex: 1; min-width: 0; accent-color: #8bb4ff; }
+  .range-setting output { min-width: 42px; color: #cbd8f2; font-variant-numeric: tabular-nums; text-align: right; }
   .settings-note { margin: 0 0 16px; padding: 10px; background: #292c33; border-left: 3px solid #6af; font-size: 12px; }
+  .toggle-setting { display: flex; align-items: center; gap: 10px; min-height: 46px; margin-bottom: 16px; }
+  .toggle-setting input { width: 20px; height: 20px; accent-color: #8bb4ff; }
+  .phone-only-setting { display: none; }
   .settings-done { width: 100%; min-height: 42px; background: #315cba; border-color: #4775d4; }
+  .native-keyboard-input { position: fixed; z-index: 1; left: 50%; top: 50%; width: 1px; height: 1px; padding: 0; border: 0; opacity: 0; pointer-events: none; font-size: 16px; }
+  .input-toast { position: fixed; z-index: 1000; left: 50%; bottom: max(20px, env(safe-area-inset-bottom)); transform: translate(-50%, 12px); max-width: calc(100vw - 32px); padding: 12px 18px; color: #fff; background: #202329; border: 1px solid #535b69; border-radius: 8px; box-shadow: 0 8px 30px rgb(0 0 0 / .45); text-align: center; opacity: 0; pointer-events: none; transition: opacity .18s ease, transform .18s ease; }
+  .input-toast.visible { opacity: 1; transform: translate(-50%, 0); }
+  @media (pointer: coarse) {
+    #fullscreen { display: none; }
+    [data-special-row] { display: none; }
+    .desktop-only-setting { display: none; }
+    .phone-only-setting { display: flex; }
+  }
   @media (max-width: 620px) {
     .shell { padding: 10px; }
     .bar { gap: 7px; padding: 9px; }
     .bar button { min-height: 42px; padding: 7px 9px; }
+    #screen { min-height: 240px; }
     #dos { min-height: 240px; height: 42vh; }
-    #help { padding: 0 4px; }
+    #fullscreen { display: none; }
+    .touch-keys { margin-top: 8px; }
+    .touch-keys summary { min-height: 48px; display: flex; align-items: center; }
+    .keypad { padding: 8px 6px calc(10px + env(safe-area-inset-bottom)); gap: 7px; }
+    .key-row { gap: 6px; }
+    .key-row button { min-height: 50px; flex-basis: 42px; font-size: 14px; }
+    .key-row button.wide { flex-basis: 68px; }
+    .key-row.function-row button { flex-basis: 46px; }
+    .key-row button.space { min-height: 52px; }
   }
 </style>
 </head>
@@ -67,55 +142,69 @@
     <button id="restart" class="icon-button" disabled aria-label="Reload emulator" title="Reload">
       <img src="./assets/icons/reload.svg" alt="">
     </button>
+    <button id="save" class="icon-button" disabled aria-label="Save files" title="Save">
+      <img class="white-icon" src="./assets/icons/save.svg" alt="">
+      <span class="save-indicator" aria-hidden="true"></span>
+    </button>
     <button id="settings-open" class="icon-button" aria-label="Open settings" title="Settings">
       <img src="./assets/icons/settings.svg" alt="">
     </button>
   </div>
-  <div id="screen"><div id="dos"></div></div>
+  <div id="screen" tabindex="0" aria-label="Turbo C++ emulator screen">
+    <div id="dos"></div>
+    <div id="screen-overlay" class="screen-overlay" role="status" aria-live="polite">
+      <div id="loading-state" class="loading-state">
+        <span class="loading-spinner" aria-hidden="true"></span>
+        <strong id="loading-title">Preparing Turbo C++…</strong>
+        <span id="loading-detail">Loading DOSBox and emulator files.</span>
+      </div>
+      <button id="capture-overlay" class="capture-overlay" type="button" hidden>
+        <strong>Click to capture mouse and keyboard</strong>
+        <span>Hold Esc to release the mouse</span>
+      </button>
+    </div>
+  </div>
+  <div id="input-toast" class="input-toast" role="status" aria-live="polite" hidden></div>
   <details id="touch-keys" class="touch-keys">
-    <summary>On-screen keyboard</summary>
+    <summary aria-label="Toggle on-screen keyboard"></summary>
+    <button id="native-keyboard-open" class="native-keyboard-open" type="button" aria-label="Open phone keyboard">
+      <img src="./assets/icons/keyboard.svg" alt="">
+    </button>
     <div class="keypad" aria-label="Turbo C++ touch keyboard">
-      <div class="key-row function-row">
-        <button data-key="290" disabled>F1</button><button data-key="291" disabled>F2</button>
-        <button data-key="292" disabled>F3</button><button data-key="293" disabled>F4</button>
-        <button data-key="294" disabled>F5</button><button data-key="295" disabled>F6</button>
-        <button data-key="296" disabled>F7</button><button data-key="297" disabled>F8</button>
+      <div class="key-row function-row keyboard-text-row" data-special-row>
+        <button data-key="256" disabled>Esc</button><button data-key="290" disabled>F1</button><button data-key="291" disabled>F2</button><button data-key="292" disabled>F3</button><button data-key="293" disabled>F4</button>
+        <button data-key="294" disabled>F5</button><button data-key="295" disabled>F6</button><button data-key="296" disabled>F7</button><button data-key="297" disabled>F8</button>
         <button data-key="298" disabled>F9</button><button data-key="299" disabled>F10</button>
-        <button data-key="300" disabled>F11</button><button data-key="301" disabled>F12</button>
+        <button class="pc-nav-key" data-key="260" data-pc-key disabled>Ins</button><button class="pc-nav-key" data-key="261" data-pc-key disabled>Del</button><button class="pc-nav-key" data-key="268" data-pc-key disabled>Home</button><button class="pc-nav-key" data-key="269" data-pc-key disabled>End</button><button class="pc-nav-key" data-key="266" data-pc-key disabled>PgUp</button><button class="pc-nav-key" data-key="267" data-pc-key disabled>PgDn</button>
       </div>
-      <div class="key-row">
-        <button data-key="49" disabled>1</button><button data-key="50" disabled>2</button><button data-key="51" disabled>3</button><button data-key="52" disabled>4</button><button data-key="53" disabled>5</button><button data-key="54" disabled>6</button><button data-key="55" disabled>7</button><button data-key="56" disabled>8</button><button data-key="57" disabled>9</button><button data-key="48" disabled>0</button><button data-key="45" disabled>-</button><button data-key="61" disabled>=</button>
+      <div class="key-row keyboard-text-row">
+        <button class="double-label" data-key="96" disabled><span>~</span><span>`</span></button><button class="double-label" data-key="49" disabled><span>!</span><span>1</span></button><button class="double-label" data-key="50" disabled><span>@</span><span>2</span></button><button class="double-label" data-key="51" disabled><span>#</span><span>3</span></button><button class="double-label" data-key="52" disabled><span>$</span><span>4</span></button><button class="double-label" data-key="53" disabled><span>%</span><span>5</span></button><button class="double-label" data-key="54" disabled><span>^</span><span>6</span></button><button class="double-label" data-key="55" disabled><span>&amp;</span><span>7</span></button><button class="double-label" data-key="56" disabled><span>*</span><span>8</span></button><button class="double-label" data-key="57" disabled><span>(</span><span>9</span></button><button class="double-label" data-key="48" disabled><span>)</span><span>0</span></button><button class="double-label" data-key="45" disabled><span>_</span><span>-</span></button><button class="double-label" data-key="61" disabled><span>+</span><span>=</span></button><button class="wide" data-key="259" disabled>Backspace</button>
       </div>
-      <div class="key-row">
-        <button data-key="81" disabled>Q</button><button data-key="87" disabled>W</button><button data-key="69" disabled>E</button><button data-key="82" disabled>R</button><button data-key="84" disabled>T</button><button data-key="89" disabled>Y</button><button data-key="85" disabled>U</button><button data-key="73" disabled>I</button><button data-key="79" disabled>O</button><button data-key="80" disabled>P</button><button data-key="91" disabled>[</button><button data-key="93" disabled>]</button><button data-key="92" disabled>&#92;</button>
+      <div class="key-row keyboard-text-row">
+        <button class="wide" data-key="258" disabled>Tab</button><button data-key="81" disabled>Q</button><button data-key="87" disabled>W</button><button data-key="69" disabled>E</button><button data-key="82" disabled>R</button><button data-key="84" disabled>T</button><button data-key="89" disabled>Y</button><button data-key="85" disabled>U</button><button data-key="73" disabled>I</button><button data-key="79" disabled>O</button><button data-key="80" disabled>P</button><button class="double-label" data-key="91" disabled><span>{</span><span>[</span></button><button class="double-label" data-key="93" disabled><span>}</span><span>]</span></button><button class="double-label" data-key="92" disabled><span>|</span><span>\</span></button>
       </div>
-      <div class="key-row">
-        <button data-key="65" disabled>A</button><button data-key="83" disabled>S</button><button data-key="68" disabled>D</button><button data-key="70" disabled>F</button><button data-key="71" disabled>G</button><button data-key="72" disabled>H</button><button data-key="74" disabled>J</button><button data-key="75" disabled>K</button><button data-key="76" disabled>L</button><button data-key="59" disabled>;</button><button data-key="39" disabled>'</button>
+      <div class="key-row keyboard-text-row">
+        <button data-key="65" disabled>A</button><button data-key="83" disabled>S</button><button data-key="68" disabled>D</button><button data-key="70" disabled>F</button><button data-key="71" disabled>G</button><button data-key="72" disabled>H</button><button data-key="74" disabled>J</button><button data-key="75" disabled>K</button><button data-key="76" disabled>L</button><button class="double-label" data-key="59" disabled><span>:</span><span>;</span></button><button class="double-label" data-key="39" disabled><span>&quot;</span><span>'</span></button><button class="wide" data-key="257" disabled>Enter</button>
       </div>
-      <div class="key-row">
-        <button class="wide" data-modifier="340" disabled>Shift</button><button data-key="90" disabled>Z</button><button data-key="88" disabled>X</button><button data-key="67" disabled>C</button><button data-key="86" disabled>V</button><button data-key="66" disabled>B</button><button data-key="78" disabled>N</button><button data-key="77" disabled>M</button><button data-key="44" disabled>,</button><button data-key="46" disabled>.</button><button data-key="47" disabled>/</button><button class="wide" data-key="259" disabled>⌫</button>
+      <div class="key-row keyboard-text-row">
+        <button class="wide" data-modifier="340" disabled>Shift</button><button data-key="90" disabled>Z</button><button data-key="88" disabled>X</button><button data-key="67" disabled>C</button><button data-key="86" disabled>V</button><button data-key="66" disabled>B</button><button data-key="78" disabled>N</button><button data-key="77" disabled>M</button><button class="double-label" data-key="44" disabled><span>&lt;</span><span>,</span></button><button class="double-label" data-key="46" disabled><span>&gt;</span><span>.</span></button><button class="double-label" data-key="47" disabled><span>?</span><span>/</span></button><button class="wide" data-modifier="344" disabled>Shift</button>
       </div>
-      <div class="key-row">
-        <button data-key="256" disabled>Esc</button><button data-key="258" disabled>Tab</button><button data-modifier="341" disabled>Ctrl</button><button data-modifier="342" disabled>Alt</button><button data-key="263" disabled>←</button><button data-key="265" disabled>↑</button><button data-key="264" disabled>↓</button><button data-key="262" disabled>→</button><button data-key="257" disabled>Enter</button>
+      <div class="key-row pc-bottom-row" data-pc-row>
+        <button data-modifier="341" disabled>Ctrl</button><button data-modifier="342" disabled>Alt</button><button class="space" data-key="32" disabled>Space</button><button data-modifier="346" disabled>Alt</button><button data-modifier="345" disabled>Ctrl</button>
+        <div class="arrow-cluster"><button data-key="263" disabled>←</button><button data-key="265" disabled>↑</button><button data-key="264" disabled>↓</button><button data-key="262" disabled>→</button></div>
       </div>
-      <div class="key-row"><button class="space" data-key="32" disabled>Space</button></div>
+      <div class="key-row" data-special-row>
+        <button data-key="258" disabled>Tab</button><button data-modifier="341" disabled>Ctrl</button><button data-modifier="342" disabled>Alt</button><button data-key="263" disabled>←</button><button data-key="265" disabled>↑</button><button data-key="264" disabled>↓</button><button data-key="262" disabled>→</button><button data-key="257" disabled>Enter</button>
+      </div>
     </div>
   </details>
-  <div id="status" role="status" aria-live="polite">Starting…</div>
-  <div id="help"><p><b>Save files</b> keeps disk changes in this browser.</p></div>
 </main>
 <dialog id="settings-panel" aria-labelledby="settings-title">
   <div class="settings-head">
     <h2 id="settings-title">Settings</h2>
-    <button id="settings-close" type="button" aria-label="Close settings">×</button>
+    <button id="settings-close" type="button" aria-label="Close settings" title="Close settings"><img src="./assets/icons/close.svg" alt=""></button>
   </div>
   <div class="settings-body">
-    <label class="setting" for="backend-setting">Emulator backend
-      <select id="backend-setting">
-        <option value="dosbox">DOSBox · lighter on phones</option>
-        <option value="dosboxX">DOSBox-X</option>
-      </select>
-    </label>
     <label class="setting" for="aspect-setting">Display aspect
       <select id="aspect-setting">
         <option value="AsIs">Native</option>
@@ -130,31 +219,86 @@
         <option value="smooth">Smooth</option>
       </select>
     </label>
-    <p class="settings-note"><b>Performance:</b> DOSBox is the lighter option for phones. File saves work with either backend.</p>
+    <label class="toggle-setting phone-only-setting" for="native-keyboard-setting">
+      <input id="native-keyboard-setting" type="checkbox">
+      <span>Use native on-screen keyboard on phones</span>
+    </label>
+    <label class="toggle-setting phone-only-setting" for="touch-cursor-setting">
+      <input id="touch-cursor-setting" type="checkbox">
+      <span>Use drag-to-move cursor on phones</span>
+    </label>
+    <label class="toggle-setting desktop-only-setting" for="desktop-keyboard-setting">
+      <input id="desktop-keyboard-setting" type="checkbox">
+      <span>Show on-screen keyboard on PC</span>
+    </label>
+    <label class="setting" for="mouse-sensitivity-setting">Mouse sensitivity
+      <span class="range-setting">
+        <input id="mouse-sensitivity-setting" type="range" min="0" max="1" step="0.01">
+        <output id="mouse-sensitivity-value" for="mouse-sensitivity-setting">50%</output>
+      </span>
+    </label>
+    <p class="settings-note"><b>Performance:</b> Turbo C++ uses DOSBox for phone performance. File saves work in this browser.</p>
     <button id="settings-done" class="settings-done" type="button">Done</button>
   </div>
 </dialog>
+<textarea id="native-keyboard-input" class="native-keyboard-input" aria-label="Type into Turbo C++" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="text"></textarea>
 <script>
 (() => {
 const el = id => document.getElementById(id);
-const say = t => { el("status").textContent = t; };
 let player = null;
 let ci = null;
-let paused = false;
-// Start with a fresh bundle revision while keeping file changes under a stable key.
+const desktopPointer = matchMedia("(pointer: fine)").matches;
+let pointerWasCaptured = false;
+let toastTimer = 0;
+let escapeHoldTimer = 0;
+let escapeHoldAvailable = false;
+let escapeReleaseTriggered = false;
+let wheelRemainder = 0;
 let bundleUrl = "./turboc.jsdos?v=3";
 const aspectValues = ["AsIs", "4/3", "16/9", "Fit"];
 const renderValues = ["pixelated", "smooth"];
 const stored = key => { try { return localStorage.getItem("turbo-c-" + key); } catch (e) { return null; } };
-const backendValues = ["dosbox", "dosboxX"];
-const defaultBackend = "dosbox";
-let backendPref = backendValues.includes(stored("backend")) ? stored("backend") : defaultBackend;
+const storedSensitivity = stored("mouse-sensitivity");
+const parsedSensitivity = storedSensitivity === null ? 0.5 : Number(storedSensitivity);
+let sensitivityPref = Number.isFinite(parsedSensitivity) && parsedSensitivity >= 0 && parsedSensitivity <= 1 ? parsedSensitivity : 0.5;
 let aspectPref = aspectValues.includes(stored("aspect")) ? stored("aspect") : "AsIs";
 let renderPref = renderValues.includes(stored("render")) ? stored("render") : "pixelated";
-el("backend-setting").value = backendPref;
+const storedNativeKeyboard = stored("native-keyboard");
+let nativeKeyboardPref = storedNativeKeyboard === null ? true : storedNativeKeyboard === "true";
+let touchCursorPref = stored("touch-cursor") === "true";
+let desktopKeyboardPref = stored("desktop-keyboard") === "true";
+const phoneLayout = matchMedia("(pointer: coarse)");
+const touchKeys = el("touch-keys");
+let touchCursorPointerId = null;
+let touchCursorLastX = 0;
+let touchCursorLastY = 0;
+let touchCursorStartX = 0;
+let touchCursorStartY = 0;
+let touchCursorMoved = false;
+const applyTouchCursorMode = () => {
+  const enabled = phoneLayout.matches && touchCursorPref;
+  el("screen").classList.toggle("touch-cursor-mode", enabled);
+  el("touch-cursor-setting").checked = touchCursorPref;
+  if (!enabled) {
+    if (touchCursorPointerId !== null && ci) ci.sendMouseButton(0, false);
+    touchCursorPointerId = null;
+    touchCursorMoved = false;
+  }
+};
+const applyKeyboardMode = () => {
+  const nativeMode = phoneLayout.matches && nativeKeyboardPref;
+  touchKeys.hidden = !phoneLayout.matches && !desktopKeyboardPref;
+  touchKeys.classList.toggle("native-mode", nativeMode);
+  el("native-keyboard-setting").checked = nativeKeyboardPref;
+  el("desktop-keyboard-setting").checked = desktopKeyboardPref;
+};
 el("aspect-setting").value = aspectPref;
 el("render-setting").value = renderPref;
-const controls = ["fullscreen", "restart"];
+el("mouse-sensitivity-setting").value = String(sensitivityPref);
+el("mouse-sensitivity-value").value = Math.round(sensitivityPref * 100) + "%";
+applyKeyboardMode();
+applyTouchCursorMode();
+const controls = ["fullscreen", "restart", "save"];
 const enableControls = enabled => {
   controls.forEach(id => { el(id).disabled = !enabled; });
   document.querySelectorAll("[data-key], [data-modifier]").forEach(key => { key.disabled = !enabled; });
@@ -163,11 +307,16 @@ const enableControls = enabled => {
 async function run() {
   if (player) { try { await player.stop(); } catch (e) {} player = null; ci = null; }
   el("dos").innerHTML = "";
+  el("screen-overlay").hidden = false;
+  el("loading-state").hidden = false;
+  el("loading-title").textContent = "Preparing Turbo C++…";
+  el("loading-detail").textContent = "Loading DOSBox and emulator files.";
+  el("capture-overlay").hidden = true;
+  el("dos").inert = desktopPointer;
   enableControls(false);
-  say("Starting Turbo C++…");
   player = Dos(el("dos"), {
     url: bundleUrl,
-    backend: backendPref,
+    backend: "dosbox",
     backendLocked: true,
     autoStart: true,
     autoSave: true,
@@ -179,6 +328,8 @@ async function run() {
     quickSave: false,
     workerThread: true,
     renderBackend: "webgl",
+    mouseCapture: desktopPointer,
+    mouseSensitivity: sensitivityPref,
     renderAspect: aspectPref,
     imageRendering: renderPref,
     theme: "dark",
@@ -188,18 +339,240 @@ async function run() {
         enableControls(true);
         player.setRenderAspect(el("aspect-setting").value);
         player.setImageRendering(el("render-setting").value);
-        say("Ready. Click the screen to use the keyboard.");
+        el("loading-state").hidden = true;
+        if (desktopPointer) {
+          el("screen-overlay").hidden = false;
+          el("capture-overlay").hidden = false;
+          el("capture-overlay").focus({ preventScroll: true });
+        } else {
+          el("screen-overlay").hidden = true;
+          el("dos").inert = false;
+        }
       }
+      if (event === "fullscreen-change") syncFullscreenOverlay(!!arg);
     }
   });
 }
 
+function showToast(message) {
+  const toast = el("input-toast");
+  toast.textContent = message;
+  toast.hidden = false;
+  requestAnimationFrame(() => toast.classList.add("visible"));
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    toast.classList.remove("visible");
+    setTimeout(() => { if (!toast.classList.contains("visible")) toast.hidden = true; }, 200);
+  }, 4200);
+}
+
+const setSaveStatus = status => {
+  const button = el("save");
+  button.dataset.saveState = status;
+  button.title = status === "success" ? "Save completed" : "Save failed";
+  button.setAttribute("aria-label", status === "success" ? "Save completed" : "Save failed");
+};
+const saveSuccessText = /\bsaved(?: in browser)?\b|\bsave(?:d)? successfully\b/i;
+const saveFailureText = /\b(?:unable to (?:save|write)|fail(?:ed|ure)? to save|save (?:failed|error)|error (?:saving|writing))\b/i;
+const processSaveNotice = root => {
+  const elements = root.nodeType === Node.TEXT_NODE ? [root.parentElement] : root.nodeType === Node.ELEMENT_NODE ? [root, ...root.querySelectorAll("*")] : [];
+  for (const element of elements) {
+    if (!element || !element.isConnected) continue;
+    const text = (element.textContent || "").trim();
+    if (!text || text.length > 180) continue;
+    const failed = saveFailureText.test(text);
+    if (!failed && !saveSuccessText.test(text)) continue;
+    setSaveStatus(failed ? "error" : "success");
+    let notice = element;
+    for (let parent = element.parentElement; parent && parent !== document.body; parent = parent.parentElement) {
+      if (Array.from(parent.classList).some(name => /toast|notification|notyf|alert/i.test(name))) notice = parent;
+    }
+    notice.remove();
+  }
+};
+new MutationObserver(records => {
+  for (const record of records) {
+    if (record.type === "characterData") processSaveNotice(record.target);
+    for (const node of record.addedNodes) processSaveNotice(node);
+  }
+}).observe(document.body, { childList: true, subtree: true, characterData: true });
+
+const captureOverlay = el("capture-overlay");
+captureOverlay.hidden = true;
+el("screen-overlay").hidden = false;
+el("dos").inert = desktopPointer;
+function requestMouseCapture() {
+  if (!desktopPointer || !player) return;
+  const canvas = el("dos").querySelector("canvas");
+  if (!canvas || typeof canvas.requestPointerLock !== "function") {
+    showToast("The emulator is not ready for mouse capture yet.");
+    return;
+  }
+  el("dos").inert = false;
+  escapeHoldAvailable = false;
+  if (navigator.keyboard && typeof navigator.keyboard.lock === "function") {
+    try {
+      navigator.keyboard.lock(["Escape"]).then(() => {
+        escapeHoldAvailable = true;
+        if (el("screen").classList.contains("pointer-captured")) {
+          captureOverlay.querySelector("span").textContent = "Hold Esc to release the mouse";
+          showToast("Mouse and keyboard captured. Hold Esc to release.");
+        }
+      }).catch(() => {
+        escapeHoldAvailable = false;
+        if (el("screen").classList.contains("pointer-captured")) {
+          captureOverlay.querySelector("span").textContent = "Press Esc to release the mouse";
+          showToast("This browser releases the mouse as soon as Esc is pressed.");
+        }
+      });
+    } catch (error) {}
+  }
+  try {
+    const request = canvas.requestPointerLock();
+    if (request && typeof request.catch === "function") {
+      request.catch(() => {
+        escapeHoldAvailable = false;
+        el("dos").inert = desktopPointer && !el("dos").contains(el("screen-overlay"));
+        showToast("Mouse capture was blocked. Click the emulator to try again.");
+      });
+    }
+  } catch (error) {
+    escapeHoldAvailable = false;
+    el("dos").inert = desktopPointer && !el("dos").contains(el("screen-overlay"));
+    showToast("Mouse capture was blocked. Click the emulator to try again.");
+  }
+}
+captureOverlay.addEventListener("click", requestMouseCapture);
+
+function syncFullscreenOverlay(fullscreen) {
+  if (!desktopPointer) return;
+  const overlay = el("screen-overlay");
+  const screen = el("screen");
+  const captured = screen.classList.contains("pointer-captured");
+  if (fullscreen) {
+    const host = document.fullscreenElement || document.querySelector(".jsdos-fullscreen-workaround") || el("dos");
+    if (!host.contains(overlay)) host.appendChild(overlay);
+    overlay.classList.add("fullscreen-overlay");
+    if (!captured) {
+      el("dos").inert = false;
+      overlay.hidden = false;
+      el("loading-state").hidden = true;
+      captureOverlay.hidden = false;
+      captureOverlay.focus({ preventScroll: true });
+    }
+  } else {
+    if (overlay.parentElement !== screen) screen.appendChild(overlay);
+    overlay.classList.remove("fullscreen-overlay");
+    if (!captured) {
+      el("dos").inert = true;
+      overlay.hidden = false;
+      el("loading-state").hidden = true;
+      captureOverlay.hidden = false;
+      captureOverlay.focus({ preventScroll: true });
+    }
+  }
+}
+document.addEventListener("fullscreenchange", () => {
+  syncFullscreenOverlay(!!document.fullscreenElement);
+});
+
+document.addEventListener("pointerlockchange", () => {
+  const screen = el("screen");
+  const captured = !!document.pointerLockElement && screen.contains(document.pointerLockElement);
+  screen.classList.toggle("pointer-captured", captured);
+  el("screen-overlay").hidden = !desktopPointer || captured;
+  captureOverlay.hidden = !desktopPointer || captured;
+  el("dos").inert = desktopPointer && !captured && !el("dos").contains(el("screen-overlay"));
+  if (player) player.setNoCursor(captured);
+  if (captured) {
+    pointerWasCaptured = true;
+    screen.focus({ preventScroll: true });
+    captureOverlay.querySelector("span").textContent = escapeHoldAvailable ? "Hold Esc to release the mouse" : "Press Esc to release the mouse";
+    showToast(escapeHoldAvailable ? "Mouse and keyboard captured. Hold Esc to release." : "Mouse captured. Press Esc to release.");
+  } else if (pointerWasCaptured) {
+    clearTimeout(escapeHoldTimer);
+    escapeHoldTimer = 0;
+    escapeReleaseTriggered = false;
+    escapeHoldAvailable = false;
+    if (navigator.keyboard && typeof navigator.keyboard.unlock === "function") navigator.keyboard.unlock();
+    pointerWasCaptured = false;
+    wheelRemainder = 0;
+    captureOverlay.focus({ preventScroll: true });
+    showToast("Mouse released. Click the emulator to capture it again.");
+  }
+});
+
+document.addEventListener("pointerlockerror", () => {
+  el("dos").inert = desktopPointer && !el("dos").contains(el("screen-overlay"));
+  el("screen-overlay").hidden = !desktopPointer;
+  captureOverlay.hidden = !desktopPointer;
+  escapeHoldAvailable = false;
+  showToast("Mouse capture was blocked. Click the emulator screen to try again.");
+});
+
+document.addEventListener("keydown", event => {
+  if (!desktopPointer) return;
+  const screen = el("screen");
+  const focusedInScreen = screen.contains(document.activeElement);
+  if (!focusedInScreen) return;
+  const captured = screen.classList.contains("pointer-captured");
+  if (!captured) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    return;
+  }
+  if (event.key === "Escape" && escapeHoldAvailable) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (!escapeHoldTimer && !escapeReleaseTriggered) {
+      showToast("Keep holding Esc to release the mouse...");
+      escapeHoldTimer = setTimeout(() => {
+        escapeHoldTimer = 0;
+        escapeReleaseTriggered = true;
+        if (document.pointerLockElement) document.exitPointerLock();
+      }, 900);
+    }
+    return;
+  }
+  if (event.key === "Tab") {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (ci) for (let i = 0; i < 3; i++) ci.simulateKeyPress(32);
+  }
+}, true);
+
+document.addEventListener("keyup", event => {
+  if (!desktopPointer || event.key !== "Escape" || !escapeHoldAvailable) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  if (escapeHoldTimer) {
+    clearTimeout(escapeHoldTimer);
+    escapeHoldTimer = 0;
+    showToast("Keep holding Esc to release the mouse.");
+  }
+}, true);
+
+window.addEventListener("wheel", event => {
+  if (!desktopPointer || !el("screen").classList.contains("pointer-captured")) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  if (!ci || event.deltaY === 0) return;
+  const scale = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? window.innerHeight : 1;
+  wheelRemainder += event.deltaY * scale;
+  while (Math.abs(wheelRemainder) >= 80) {
+    const upward = wheelRemainder < 0;
+    ci.simulateKeyPress(upward ? 266 : 267);
+    wheelRemainder += upward ? 80 : -80;
+  }
+}, { capture: true, passive: false });
+
 async function start() {
   try {
-    say("Loading emulator…");
     const loadScript = src => new Promise((resolve, reject) => {
       const script = document.createElement("script");
       script.src = src;
+      script.crossOrigin = "anonymous";
+      script.fetchPriority = "high";
       script.onload = resolve;
       script.onerror = () => reject(new Error("Could not load " + src));
       document.head.appendChild(script);
@@ -210,7 +583,11 @@ async function start() {
     await run();
   } catch (e) {
     enableControls(false);
-    say("Could not start Turbo C++: " + e.message);
+    el("screen-overlay").hidden = false;
+    el("loading-state").hidden = false;
+    el("loading-state").querySelector(".loading-spinner").hidden = true;
+    el("loading-title").textContent = "Could not load Turbo C++";
+    el("loading-detail").textContent = e.message;
   }
 }
 
@@ -219,17 +596,6 @@ el("settings-close").onclick = () => el("settings-panel").close();
 el("settings-done").onclick = () => el("settings-panel").close();
 el("settings-panel").onclick = event => {
   if (event.target === el("settings-panel")) el("settings-panel").close();
-};
-el("backend-setting").onchange = async event => {
-  const value = event.target.value;
-  if (value === backendPref) return;
-  if (player) {
-    say("Saving files before changing backend…");
-    try { await player.save(); } catch (e) { say("Could not save files: " + e.message); }
-  }
-  backendPref = value;
-  try { localStorage.setItem("turbo-c-backend", value); } catch (e) {}
-  await run();
 };
 el("aspect-setting").onchange = event => {
   const value = aspectPref = event.target.value;
@@ -241,8 +607,121 @@ el("render-setting").onchange = event => {
   try { localStorage.setItem("turbo-c-render", value); } catch (e) {}
   if (player) player.setImageRendering(value);
 };
+el("mouse-sensitivity-setting").oninput = event => {
+  const value = sensitivityPref = Number(event.target.value);
+  el("mouse-sensitivity-value").value = Math.round(value * 100) + "%";
+  try { localStorage.setItem("turbo-c-mouse-sensitivity", String(value)); } catch (e) {}
+  if (player) player.setMouseSensitivity(value);
+};
+el("native-keyboard-setting").onchange = event => {
+  nativeKeyboardPref = event.target.checked;
+  try { localStorage.setItem("turbo-c-native-keyboard", String(nativeKeyboardPref)); } catch (e) {}
+  applyKeyboardMode();
+  if (!nativeKeyboardPref) el("native-keyboard-input").blur();
+};
+el("touch-cursor-setting").onchange = event => {
+  touchCursorPref = event.target.checked;
+  try { localStorage.setItem("turbo-c-touch-cursor", String(touchCursorPref)); } catch (e) {}
+  applyTouchCursorMode();
+  if (!touchCursorPref) el("native-keyboard-input").blur();
+  else showToast("Drag to move the cursor. Tap to click.");
+};
+el("desktop-keyboard-setting").onchange = event => {
+  desktopKeyboardPref = event.target.checked;
+  try { localStorage.setItem("turbo-c-desktop-keyboard", String(desktopKeyboardPref)); } catch (e) {}
+  applyKeyboardMode();
+  touchKeys.open = desktopKeyboardPref;
+};
+
+el("screen").addEventListener("click", () => {
+  if (phoneLayout.matches && nativeKeyboardPref && ci) {
+    el("native-keyboard-input").focus({ preventScroll: true });
+  }
+});
+el("native-keyboard-open").onclick = () => {
+  if (phoneLayout.matches && nativeKeyboardPref) el("native-keyboard-input").focus({ preventScroll: true });
+};
+el("screen").addEventListener("pointerdown", event => {
+  if (!phoneLayout.matches || !touchCursorPref || !ci || event.pointerType !== "touch") return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  if (touchCursorPointerId !== null) return;
+  touchCursorPointerId = event.pointerId;
+  try { el("screen").setPointerCapture(event.pointerId); } catch (e) {}
+  touchCursorLastX = touchCursorStartX = event.clientX;
+  touchCursorLastY = touchCursorStartY = event.clientY;
+  touchCursorMoved = false;
+}, true);
+el("screen").addEventListener("pointermove", event => {
+  if (!phoneLayout.matches || !touchCursorPref || event.pointerType !== "touch") return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  if (event.pointerId !== touchCursorPointerId) return;
+  const rect = el("screen").getBoundingClientRect();
+  if (rect.width && rect.height) {
+    ci.sendMouseRelativeMotion(
+      (event.clientX - touchCursorLastX) * ci.width() / rect.width,
+      (event.clientY - touchCursorLastY) * ci.height() / rect.height
+    );
+  }
+  if (Math.hypot(event.clientX - touchCursorStartX, event.clientY - touchCursorStartY) > 8) touchCursorMoved = true;
+  touchCursorLastX = event.clientX;
+  touchCursorLastY = event.clientY;
+}, true);
+const finishTouchCursor = (event, click) => {
+  if (!phoneLayout.matches || !touchCursorPref || event.pointerType !== "touch") return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  if (event.pointerId !== touchCursorPointerId) return;
+  if (ci && click && !touchCursorMoved) {
+    ci.sendMouseButton(0, true);
+    ci.sendMouseButton(0, false);
+  }
+  touchCursorPointerId = null;
+  touchCursorMoved = false;
+};
+el("screen").addEventListener("pointerup", event => finishTouchCursor(event, true), true);
+el("screen").addEventListener("pointercancel", event => finishTouchCursor(event, false), true);
+
+const nativeKeyCodes = {
+  Backspace: 259, Enter: 257, Escape: 256, Tab: 258,
+  ArrowLeft: 263, ArrowUp: 265, ArrowDown: 264, ArrowRight: 262,
+  Insert: 260, Delete: 261, PageUp: 266, PageDown: 267, Home: 268, End: 269
+};
+el("native-keyboard-input").addEventListener("keydown", event => {
+  if (!ci) return;
+  const code = nativeKeyCodes[event.key];
+  if (code === undefined) return;
+  event.preventDefault();
+  if (code === 258) {
+    for (let i = 0; i < 3; i++) ci.simulateKeyPress(32);
+  } else {
+    ci.simulateKeyPress(code);
+  }
+});
+el("native-keyboard-input").addEventListener("input", event => {
+  if (!ci) return;
+  for (const character of event.target.value) {
+    const code = character.toUpperCase().charCodeAt(0);
+    if (code < 32 || code > 126) continue;
+    const uppercase = character >= "A" && character <= "Z";
+    if (uppercase) ci.sendKeyEvent(340, true);
+    ci.simulateKeyPress(code);
+    if (uppercase) ci.sendKeyEvent(340, false);
+  }
+  event.target.value = "";
+});
 
 const heldModifiers = new Set();
+const releaseModifiers = () => {
+  if (!ci) return;
+  heldModifiers.forEach(code => ci.sendKeyEvent(code, false));
+  heldModifiers.clear();
+  document.querySelectorAll("[data-modifier]").forEach(key => {
+    key.classList.remove("active");
+    key.setAttribute("aria-pressed", "false");
+  });
+};
 document.querySelectorAll("[data-modifier]").forEach(key => {
   key.onclick = () => {
     if (!ci) return;
@@ -255,19 +734,31 @@ document.querySelectorAll("[data-modifier]").forEach(key => {
   };
 });
 document.querySelectorAll("[data-key]").forEach(key => {
-  key.onclick = () => { if (ci) ci.simulateKeyPress(Number(key.dataset.key)); };
+  key.onclick = () => {
+    if (!ci) return;
+    const code = Number(key.dataset.key);
+    if (code === 258) {
+      for (let i = 0; i < 3; i++) ci.simulateKeyPress(32);
+    } else {
+      ci.simulateKeyPress(code);
+    }
+    if (heldModifiers.size) releaseModifiers();
+  };
 });
 addEventListener("blur", () => {
-  if (!ci) return;
-  heldModifiers.forEach(code => ci.sendKeyEvent(code, false));
-  heldModifiers.clear();
-  document.querySelectorAll("[data-modifier]").forEach(key => {
-    key.classList.remove("active");
-    key.setAttribute("aria-pressed", "false");
-  });
+  releaseModifiers();
+  if (touchCursorPointerId !== null) {
+    touchCursorPointerId = null;
+    touchCursorMoved = false;
+  }
 });
 
-if (matchMedia("(max-width: 620px)").matches) el("touch-keys").open = true;
+if (phoneLayout.matches || desktopKeyboardPref) touchKeys.open = true;
+phoneLayout.addEventListener("change", () => {
+  applyKeyboardMode();
+  applyTouchCursorMode();
+  if (phoneLayout.matches || desktopKeyboardPref) touchKeys.open = true;
+});
 
 el("fullscreen").onclick = () => {
   if (!player) return;
@@ -277,12 +768,20 @@ el("fullscreen").onclick = () => {
 el("restart").onclick = async () => {
   if (!player) return;
   try {
-    say("Saving before restart…");
     await player.save();
   } catch (e) {
-    say("Save failed; restarting anyway…");
   }
   await run();
+};
+
+el("save").onclick = async () => {
+  if (!player) return;
+  try {
+    await player.save();
+    setSaveStatus("success");
+  } catch (e) {
+    setSaveStatus("error");
+  }
 };
 
 start();
