@@ -24,9 +24,7 @@
   button.primary { background: #315cba; border-color: #4775d4; }
   button.primary:hover:not(:disabled) { background: #3c6bd0; }
   button:focus-visible, summary:focus-visible, select:focus-visible { outline: 2px solid #8bb4ff; outline-offset: 2px; }
-  .icon-button { display: grid; place-items: center; width: 42px; height: 42px; padding: 0; }
-  .icon-button { position: relative; }
-  .icon-button svg { width: 21px; height: 21px; }
+  .icon-button { position: relative; display: grid; place-items: center; width: 42px; height: 42px; padding: 0; }
   .icon-button img { display: block; width: 21px; height: 21px; }
   .icon-button img.white-icon { filter: brightness(0) invert(1); }
   .save-indicator { position: absolute; top: 2px; right: 2px; width: 9px; height: 9px; border: 1.5px solid #1b1d22; border-radius: 50%; opacity: 0; }
@@ -44,7 +42,6 @@
   .loading-state, .capture-overlay { display: grid; justify-items: center; align-content: center; gap: 10px; width: 100%; height: 100%; padding: 0; }
   .loading-state span:last-child, .capture-overlay span { color: #b9bdc8; font-size: 13px; }
   .capture-overlay { border: 0; border-radius: 0; background: transparent; color: #fff; text-align: center; cursor: pointer; }
-  .capture-overlay:disabled { opacity: 1; cursor: wait; }
   .capture-overlay strong { font-size: clamp(16px, 2.5vw, 22px); }
   .loading-spinner { width: 34px; height: 34px; border: 3px solid #454a55; border-top-color: #8bb4ff; border-radius: 50%; animation: loading-spin .8s linear infinite; }
   @keyframes loading-spin { to { transform: rotate(360deg); } }
@@ -55,7 +52,7 @@
   .touch-keys summary { padding: 11px 14px; cursor: pointer; font-weight: 600; touch-action: manipulation; }
   .keypad { padding: 8px; display: grid; gap: 5px; overflow-x: hidden; }
   .key-row { display: flex; gap: 4px; justify-content: flex-start; overflow-x: auto; overscroll-behavior-inline: contain; scrollbar-width: thin; }
-  .key-row button { min-width: 40px; min-height: 46px; flex: 0 0 40px; padding: 5px 3px; font-size: 13px; touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+  .key-row button { min-width: 40px; min-height: 46px; flex: 0 0 40px; padding: 5px 3px; font-size: 13px; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
   .key-row button.wide { flex-basis: 64px; }
   .key-row button.space { flex: 1 0 180px; }
   .key-row button.double-label { display: grid; grid-template-rows: 1fr 1fr; align-items: center; line-height: 1; padding: 4px; }
@@ -100,7 +97,6 @@
   .range-setting { display: flex; align-items: center; gap: 12px; min-height: 42px; padding: 0 10px; background: #292c33; border: 1px solid #555b68; border-radius: 6px; }
   .range-setting input { flex: 1; min-width: 0; accent-color: #8bb4ff; }
   .range-setting output { min-width: 42px; color: #cbd8f2; font-variant-numeric: tabular-nums; text-align: right; }
-  .settings-note { margin: 0 0 16px; padding: 10px; background: #292c33; border-left: 3px solid #6af; font-size: 12px; }
   .toggle-setting { display: flex; align-items: center; gap: 10px; min-height: 46px; margin-bottom: 16px; }
   .toggle-setting input { width: 20px; height: 20px; accent-color: #8bb4ff; }
   .phone-only-setting { display: none; }
@@ -237,7 +233,6 @@
         <output id="mouse-sensitivity-value" for="mouse-sensitivity-setting">50%</output>
       </span>
     </label>
-    <p class="settings-note"><b>Performance:</b> Turbo C++ uses DOSBox for phone performance. File saves work in this browser.</p>
     <button id="settings-done" class="settings-done" type="button">Done</button>
   </div>
 </dialog>
@@ -254,19 +249,26 @@ let escapeHoldTimer = 0;
 let escapeHoldAvailable = false;
 let escapeReleaseTriggered = false;
 let wheelRemainder = 0;
-let bundleUrl = "./turboc.jsdos?v=3";
+const bundleUrl = "./turboc.jsdos?v=3";
 const aspectValues = ["AsIs", "4/3", "16/9", "Fit"];
 const renderValues = ["pixelated", "smooth"];
-const stored = key => { try { return localStorage.getItem("turbo-c-" + key); } catch (e) { return null; } };
-const storedSensitivity = stored("mouse-sensitivity");
+const getSetting = key => {
+  try { return localStorage.getItem("turbo-c-" + key); } catch { return null; }
+};
+const setSetting = (key, value) => {
+  try { localStorage.setItem("turbo-c-" + key, String(value)); } catch {}
+};
+const storedSensitivity = getSetting("mouse-sensitivity");
 const parsedSensitivity = storedSensitivity === null ? 0.5 : Number(storedSensitivity);
 let sensitivityPref = Number.isFinite(parsedSensitivity) && parsedSensitivity >= 0 && parsedSensitivity <= 1 ? parsedSensitivity : 0.5;
-let aspectPref = aspectValues.includes(stored("aspect")) ? stored("aspect") : "AsIs";
-let renderPref = renderValues.includes(stored("render")) ? stored("render") : "pixelated";
-const storedNativeKeyboard = stored("native-keyboard");
+const storedAspect = getSetting("aspect");
+const storedRender = getSetting("render");
+let aspectPref = aspectValues.includes(storedAspect) ? storedAspect : "AsIs";
+let renderPref = renderValues.includes(storedRender) ? storedRender : "pixelated";
+const storedNativeKeyboard = getSetting("native-keyboard");
 let nativeKeyboardPref = storedNativeKeyboard === null ? true : storedNativeKeyboard === "true";
-let touchCursorPref = stored("touch-cursor") === "true";
-let desktopKeyboardPref = stored("desktop-keyboard") === "true";
+let touchCursorPref = getSetting("touch-cursor") === "true";
+let desktopKeyboardPref = getSetting("desktop-keyboard") === "true";
 const phoneLayout = matchMedia("(pointer: coarse)");
 const touchKeys = el("touch-keys");
 let touchCursorPointerId = null;
@@ -305,7 +307,11 @@ const enableControls = enabled => {
 };
 
 async function run() {
-  if (player) { try { await player.stop(); } catch (e) {} player = null; ci = null; }
+  if (player) {
+    try { await player.stop(); } catch {}
+    player = null;
+    ci = null;
+  }
   el("dos").innerHTML = "";
   el("screen-overlay").hidden = false;
   el("loading-state").hidden = false;
@@ -365,6 +371,11 @@ function showToast(message) {
     setTimeout(() => { if (!toast.classList.contains("visible")) toast.hidden = true; }, 200);
   }, 4200);
 }
+
+const pressKey = (code, count = 1) => {
+  if (!ci) return;
+  for (let index = 0; index < count; index += 1) ci.simulateKeyPress(code);
+};
 
 const setSaveStatus = status => {
   const button = el("save");
@@ -537,7 +548,7 @@ document.addEventListener("keydown", event => {
   if (event.key === "Tab") {
     event.preventDefault();
     event.stopImmediatePropagation();
-    if (ci) for (let i = 0; i < 3; i++) ci.simulateKeyPress(32);
+    pressKey(32, 3);
   }
 }, true);
 
@@ -599,36 +610,36 @@ el("settings-panel").onclick = event => {
 };
 el("aspect-setting").onchange = event => {
   const value = aspectPref = event.target.value;
-  try { localStorage.setItem("turbo-c-aspect", value); } catch (e) {}
+  setSetting("aspect", value);
   if (player) player.setRenderAspect(value);
 };
 el("render-setting").onchange = event => {
   const value = renderPref = event.target.value;
-  try { localStorage.setItem("turbo-c-render", value); } catch (e) {}
+  setSetting("render", value);
   if (player) player.setImageRendering(value);
 };
 el("mouse-sensitivity-setting").oninput = event => {
   const value = sensitivityPref = Number(event.target.value);
   el("mouse-sensitivity-value").value = Math.round(value * 100) + "%";
-  try { localStorage.setItem("turbo-c-mouse-sensitivity", String(value)); } catch (e) {}
+  setSetting("mouse-sensitivity", value);
   if (player) player.setMouseSensitivity(value);
 };
 el("native-keyboard-setting").onchange = event => {
   nativeKeyboardPref = event.target.checked;
-  try { localStorage.setItem("turbo-c-native-keyboard", String(nativeKeyboardPref)); } catch (e) {}
+  setSetting("native-keyboard", nativeKeyboardPref);
   applyKeyboardMode();
   if (!nativeKeyboardPref) el("native-keyboard-input").blur();
 };
 el("touch-cursor-setting").onchange = event => {
   touchCursorPref = event.target.checked;
-  try { localStorage.setItem("turbo-c-touch-cursor", String(touchCursorPref)); } catch (e) {}
+  setSetting("touch-cursor", touchCursorPref);
   applyTouchCursorMode();
   if (!touchCursorPref) el("native-keyboard-input").blur();
   else showToast("Drag to move the cursor. Tap to click.");
 };
 el("desktop-keyboard-setting").onchange = event => {
   desktopKeyboardPref = event.target.checked;
-  try { localStorage.setItem("turbo-c-desktop-keyboard", String(desktopKeyboardPref)); } catch (e) {}
+  setSetting("desktop-keyboard", desktopKeyboardPref);
   applyKeyboardMode();
   touchKeys.open = desktopKeyboardPref;
 };
@@ -647,7 +658,7 @@ el("screen").addEventListener("pointerdown", event => {
   event.stopImmediatePropagation();
   if (touchCursorPointerId !== null) return;
   touchCursorPointerId = event.pointerId;
-  try { el("screen").setPointerCapture(event.pointerId); } catch (e) {}
+  try { el("screen").setPointerCapture(event.pointerId); } catch {}
   touchCursorLastX = touchCursorStartX = event.clientX;
   touchCursorLastY = touchCursorStartY = event.clientY;
   touchCursorMoved = false;
@@ -694,9 +705,9 @@ el("native-keyboard-input").addEventListener("keydown", event => {
   if (code === undefined) return;
   event.preventDefault();
   if (code === 258) {
-    for (let i = 0; i < 3; i++) ci.simulateKeyPress(32);
+    pressKey(32, 3);
   } else {
-    ci.simulateKeyPress(code);
+    pressKey(code);
   }
 });
 el("native-keyboard-input").addEventListener("input", event => {
@@ -706,7 +717,7 @@ el("native-keyboard-input").addEventListener("input", event => {
     if (code < 32 || code > 126) continue;
     const uppercase = character >= "A" && character <= "Z";
     if (uppercase) ci.sendKeyEvent(340, true);
-    ci.simulateKeyPress(code);
+    pressKey(code);
     if (uppercase) ci.sendKeyEvent(340, false);
   }
   event.target.value = "";
@@ -738,9 +749,9 @@ document.querySelectorAll("[data-key]").forEach(key => {
     if (!ci) return;
     const code = Number(key.dataset.key);
     if (code === 258) {
-      for (let i = 0; i < 3; i++) ci.simulateKeyPress(32);
+      pressKey(32, 3);
     } else {
-      ci.simulateKeyPress(code);
+      pressKey(code);
     }
     if (heldModifiers.size) releaseModifiers();
   };
@@ -767,10 +778,7 @@ el("fullscreen").onclick = () => {
 
 el("restart").onclick = async () => {
   if (!player) return;
-  try {
-    await player.save();
-  } catch (e) {
-  }
+  try { await player.save(); } catch {}
   await run();
 };
 
