@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://v8.js-dos.com" crossorigin>
 <link rel="preload" href="https://v8.js-dos.com/latest/emulators/emulators.js" as="script" crossorigin>
 <link rel="preload" href="https://v8.js-dos.com/latest/js-dos.js" as="script" crossorigin>
-<link rel="preload" href="./turboc.jsdos?v=3" as="fetch" crossorigin>
+
 <style>
   :root { color-scheme: dark; min-height: 100%; background: #101114; }
   * { box-sizing: border-box; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
@@ -249,7 +249,16 @@ let escapeHoldTimer = 0;
 let escapeHoldAvailable = false;
 let escapeReleaseTriggered = false;
 let wheelRemainder = 0;
-const bundleUrl = "./turboc.jsdos?v=3";
+const bundleUrl = "./turboc.jsdos?v=5";
+const changesKey = "turbo-c-project-files-v5.changes";
+// Migrate previously saved project files so the bumped key starts with the
+// same data instead of dropping user work.
+try {
+  if (localStorage.getItem(changesKey) === null) {
+    const legacy = localStorage.getItem("turbo-c-project-files-v3.changes");
+    if (legacy !== null) localStorage.setItem(changesKey, legacy);
+  }
+} catch {}
 const aspectValues = ["AsIs", "4/3", "16/9", "Fit"];
 const renderValues = ["pixelated", "smooth"];
 const getSetting = key => {
@@ -328,7 +337,7 @@ async function run() {
     autoSave: true,
     fsChanges: {
       local: true,
-      urlToKey: async () => "turbo-c-project-files-v3.changes"
+      urlToKey: async () => changesKey
     },
     kiosk: true,
     quickSave: false,
@@ -375,6 +384,17 @@ function showToast(message) {
 const pressKey = (code, count = 1) => {
   if (!ci) return;
   for (let index = 0; index < count; index += 1) ci.simulateKeyPress(code);
+};
+
+// The Turbo C++ editor expects a real Tab keycode, not spaces. Send a clean
+// down/up pair like the js-dos editor-bridge pattern; rapid synthetic space
+// presses wedge the DOS keyboard layer until reload.
+const tabPress = () => {
+  if (!ci) return;
+  ci.sendKeyEvent(258, true);
+  setTimeout(() => {
+    if (ci) ci.sendKeyEvent(258, false);
+  }, 40);
 };
 
 const setSaveStatus = status => {
@@ -525,8 +545,8 @@ document.addEventListener("keydown", event => {
   if (!desktopPointer) return;
   const screen = el("screen");
   const focusedInScreen = screen.contains(document.activeElement);
-  if (!focusedInScreen) return;
   const captured = screen.classList.contains("pointer-captured");
+  if (!captured && !focusedInScreen) return;
   if (!captured) {
     event.preventDefault();
     event.stopImmediatePropagation();
@@ -548,7 +568,7 @@ document.addEventListener("keydown", event => {
   if (event.key === "Tab") {
     event.preventDefault();
     event.stopImmediatePropagation();
-    pressKey(32, 3);
+    tabPress();
   }
 }, true);
 
@@ -705,7 +725,7 @@ el("native-keyboard-input").addEventListener("keydown", event => {
   if (code === undefined) return;
   event.preventDefault();
   if (code === 258) {
-    pressKey(32, 3);
+    tabPress();
   } else {
     pressKey(code);
   }
@@ -749,7 +769,7 @@ document.querySelectorAll("[data-key]").forEach(key => {
     if (!ci) return;
     const code = Number(key.dataset.key);
     if (code === 258) {
-      pressKey(32, 3);
+      tabPress();
     } else {
       pressKey(code);
     }
