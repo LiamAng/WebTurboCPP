@@ -3,26 +3,31 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Turbo C Runner</title>
+<title>Turbo C++</title>
 <link rel="stylesheet" href="https://v8.js-dos.com/latest/js-dos.css">
-<script src="https://v8.js-dos.com/latest/js-dos.js"></script>
 <style>
   :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
   body { margin: 0; background: #101114; color: #e8e9ed; font: 15px/1.5 system-ui, sans-serif; }
   .shell { max-width: 1120px; margin: 0 auto; padding: 20px; }
   .bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 12px; background: #1b1d22; border: 1px solid #30333b; border-radius: 12px 12px 0 0; }
-  .brand { font-weight: 700; margin: 0 auto 0 4px; }
-  button { font: inherit; color: inherit; background: #292c33; border: 1px solid #424650; padding: 8px 13px; border-radius: 7px; cursor: pointer; }
+  .bar-label { font-weight: 700; margin: 0 auto 0 4px; }
+  button, select { font: inherit; }
+  button { color: inherit; background: #292c33; border: 1px solid #424650; padding: 8px 13px; border-radius: 7px; cursor: pointer; }
   button:hover:not(:disabled) { background: #373b44; }
   button:disabled { opacity: .5; cursor: wait; }
   button.primary { background: #315cba; border-color: #4775d4; }
   button.primary:hover:not(:disabled) { background: #3c6bd0; }
-  button:focus-visible, summary:focus-visible { outline: 2px solid #8bb4ff; outline-offset: 2px; }
-  #status { color: #b9bdc8; font-size: 13px; min-height: 20px; margin: 10px 4px 0; }
-  #help { max-width: 760px; margin: 24px auto; padding: 0 16px; color: #b9bdc8; }
+  button:focus-visible, summary:focus-visible, select:focus-visible { outline: 2px solid #8bb4ff; outline-offset: 2px; }
+  .icon-button { display: grid; place-items: center; width: 42px; height: 42px; padding: 0; }
+  .icon-button svg { width: 21px; height: 21px; }
+  .icon-button img { display: block; width: 21px; height: 21px; }
   #screen { overflow: hidden; border: 1px solid #30333b; border-top: 0; border-radius: 0 0 12px 12px; background: #000; }
   #dos { width: 100%; height: min(62vh, 640px); min-height: 360px; margin: 0 auto; }
   #dos:empty { display: none; }
+  #status { color: #b9bdc8; font-size: 13px; min-height: 20px; margin: 10px 4px 0; }
+  #help { max-width: 760px; margin: 24px auto; padding: 0 16px; color: #b9bdc8; }
+  #help p { margin: 0; }
   .touch-keys { margin-top: 12px; border: 1px solid #30333b; border-radius: 10px; background: #1b1d22; }
   .touch-keys summary { padding: 11px 14px; cursor: pointer; font-weight: 600; touch-action: manipulation; }
   .keypad { padding: 8px; display: grid; gap: 5px; }
@@ -33,31 +38,43 @@
   .key-row button.active { background: #315cba; border-color: #8bb4ff; }
   .key-row.function-row { overflow-x: auto; justify-content: flex-start; }
   .key-row.function-row button { flex: 0 0 38px; }
+  dialog { width: min(460px, calc(100% - 28px)); padding: 0; color: #e8e9ed; background: #1b1d22; border: 1px solid #424650; border-radius: 10px; }
+  dialog::backdrop { background: rgb(0 0 0 / .65); }
+  .settings-head, .settings-body { padding: 16px; }
+  .settings-head { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #424650; }
+  .settings-head h2 { margin: 0; font-size: 18px; }
+  .settings-head button { width: 36px; height: 36px; padding: 0; font-size: 20px; }
+  .setting { display: grid; gap: 6px; margin-bottom: 16px; }
+  .setting select { width: 100%; min-height: 42px; padding: 8px; color: #e8e9ed; background: #292c33; border: 1px solid #555b68; border-radius: 6px; }
+  .settings-note { margin: 0 0 16px; padding: 10px; background: #292c33; border-left: 3px solid #6af; font-size: 12px; }
+  .settings-done { width: 100%; min-height: 42px; background: #315cba; border-color: #4775d4; }
   @media (max-width: 620px) {
     .shell { padding: 10px; }
-    .brand { width: 100%; }
-    #dos { min-height: 240px; height: 42vh; }
     .bar { gap: 7px; padding: 9px; }
     .bar button { min-height: 42px; padding: 7px 9px; }
+    #dos { min-height: 240px; height: 42vh; }
     #help { padding: 0 4px; }
   }
 </style>
 </head>
 <body>
 <main class="shell">
-  <div class="bar" role="toolbar" aria-label="Turbo C controls">
-    <span class="brand">Turbo C</span>
-    <button id="pause" disabled>Pause</button>
-    <button id="save" class="primary" disabled>Save files</button>
-    <button id="export-state" disabled>Export state</button>
-    <button id="import-state" disabled>Import state</button>
-    <button id="fullscreen" disabled>Fullscreen</button>
-    <button id="restart" disabled>Restart</button>
+  <div class="bar" role="toolbar" aria-label="Turbo C++ controls">
+    <span class="bar-label">Turbo C++</span>
+    <button id="fullscreen" class="icon-button" disabled aria-label="Enter fullscreen" title="Fullscreen">
+      <img src="./assets/icons/fullscreen.svg" alt="">
+    </button>
+    <button id="restart" class="icon-button" disabled aria-label="Reload emulator" title="Reload">
+      <img src="./assets/icons/reload.svg" alt="">
+    </button>
+    <button id="settings-open" class="icon-button" aria-label="Open settings" title="Settings">
+      <img src="./assets/icons/settings.svg" alt="">
+    </button>
   </div>
   <div id="screen"><div id="dos"></div></div>
   <details id="touch-keys" class="touch-keys">
     <summary>On-screen keyboard</summary>
-    <div class="keypad" aria-label="Turbo C touch keyboard">
+    <div class="keypad" aria-label="Turbo C++ touch keyboard">
       <div class="key-row function-row">
         <button data-key="290" disabled>F1</button><button data-key="291" disabled>F2</button>
         <button data-key="292" disabled>F3</button><button data-key="293" disabled>F4</button>
@@ -85,8 +102,38 @@
     </div>
   </details>
   <div id="status" role="status" aria-live="polite">Starting…</div>
-  <div id="help"><p><b>Save files</b> keeps disk changes in this browser. <b>Export state</b> and <b>Import state</b> use DOSBox-X snapshots to save or restore the full running machine.</p></div>
+  <div id="help"><p><b>Save files</b> keeps disk changes in this browser.</p></div>
 </main>
+<dialog id="settings-panel" aria-labelledby="settings-title">
+  <div class="settings-head">
+    <h2 id="settings-title">Settings</h2>
+    <button id="settings-close" type="button" aria-label="Close settings">×</button>
+  </div>
+  <div class="settings-body">
+    <label class="setting" for="backend-setting">Emulator backend
+      <select id="backend-setting">
+        <option value="dosbox">DOSBox · lighter on phones</option>
+        <option value="dosboxX">DOSBox-X</option>
+      </select>
+    </label>
+    <label class="setting" for="aspect-setting">Display aspect
+      <select id="aspect-setting">
+        <option value="AsIs">Native</option>
+        <option value="4/3">4:3</option>
+        <option value="16/9">16:9</option>
+        <option value="Fit">Fit screen</option>
+      </select>
+    </label>
+    <label class="setting" for="render-setting">Image rendering
+      <select id="render-setting">
+        <option value="pixelated">Sharp pixels</option>
+        <option value="smooth">Smooth</option>
+      </select>
+    </label>
+    <p class="settings-note"><b>Performance:</b> DOSBox is the lighter option for phones. File saves work with either backend.</p>
+    <button id="settings-done" class="settings-done" type="button">Done</button>
+  </div>
+</dialog>
 <script>
 (() => {
 const el = id => document.getElementById(id);
@@ -94,9 +141,20 @@ const say = t => { el("status").textContent = t; };
 let player = null;
 let ci = null;
 let paused = false;
-let fullscreen = false;
-let bundleUrl = "./turboc.jsdos";
-const controls = ["pause", "save", "export-state", "import-state", "fullscreen", "restart"];
+// Start with a fresh bundle revision while keeping file changes under a stable key.
+let bundleUrl = "./turboc.jsdos?v=3";
+const aspectValues = ["AsIs", "4/3", "16/9", "Fit"];
+const renderValues = ["pixelated", "smooth"];
+const stored = key => { try { return localStorage.getItem("turbo-c-" + key); } catch (e) { return null; } };
+const backendValues = ["dosbox", "dosboxX"];
+const defaultBackend = "dosbox";
+let backendPref = backendValues.includes(stored("backend")) ? stored("backend") : defaultBackend;
+let aspectPref = aspectValues.includes(stored("aspect")) ? stored("aspect") : "AsIs";
+let renderPref = renderValues.includes(stored("render")) ? stored("render") : "pixelated";
+el("backend-setting").value = backendPref;
+el("aspect-setting").value = aspectPref;
+el("render-setting").value = renderPref;
+const controls = ["fullscreen", "restart"];
 const enableControls = enabled => {
   controls.forEach(id => { el(id).disabled = !enabled; });
   document.querySelectorAll("[data-key], [data-modifier]").forEach(key => { key.disabled = !enabled; });
@@ -105,32 +163,32 @@ const enableControls = enabled => {
 async function run() {
   if (player) { try { await player.stop(); } catch (e) {} player = null; ci = null; }
   el("dos").innerHTML = "";
-  fullscreen = false;
-  el("fullscreen").textContent = "Fullscreen";
   enableControls(false);
-  say("Starting Turbo C…");
+  say("Starting Turbo C++…");
   player = Dos(el("dos"), {
     url: bundleUrl,
-    backend: "dosboxX",
+    backend: backendPref,
     backendLocked: true,
     autoStart: true,
     autoSave: true,
+    fsChanges: {
+      local: true,
+      urlToKey: async () => "turbo-c-project-files-v3.changes"
+    },
     kiosk: true,
     quickSave: false,
     workerThread: true,
-    offscreenCanvas: typeof OffscreenCanvas !== "undefined",
     renderBackend: "webgl",
-    imageRendering: "pixelated",
+    renderAspect: aspectPref,
+    imageRendering: renderPref,
     theme: "dark",
     onEvent: (event, arg) => {
       if (event === "ci-ready") {
         ci = arg;
         enableControls(true);
+        player.setRenderAspect(el("aspect-setting").value);
+        player.setImageRendering(el("render-setting").value);
         say("Ready. Click the screen to use the keyboard.");
-      }
-      if (event === "fullscreen-change") {
-        fullscreen = !!arg;
-        el("fullscreen").textContent = fullscreen ? "Exit fullscreen" : "Fullscreen";
       }
     }
   });
@@ -138,49 +196,51 @@ async function run() {
 
 async function start() {
   try {
-    say("Loading Turbo C...");
-    const response = await fetch(bundleUrl, { method: "HEAD" });
-    if (!response.ok) throw new Error("Could not load turboc.jsdos (" + response.status + ").");
+    say("Loading emulator…");
+    const loadScript = src => new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = src;
+      script.onload = resolve;
+      script.onerror = () => reject(new Error("Could not load " + src));
+      document.head.appendChild(script);
+    });
+    await loadScript("https://v8.js-dos.com/latest/emulators/emulators.js");
+    await loadScript("https://v8.js-dos.com/latest/js-dos.js");
+    window.emulators.pathPrefix = "https://v8.js-dos.com/latest/emulators/";
     await run();
   } catch (e) {
     enableControls(false);
-    say("Could not start Turbo C: " + e.message);
+    say("Could not start Turbo C++: " + e.message);
   }
 }
 
-el("pause").onclick = () => {
-  if (!player) return;
-  paused = !paused;
-  player.setPaused(paused);
-  el("pause").textContent = paused ? "Resume" : "Pause";
-  say(paused ? "Paused." : "Running.");
+el("settings-open").onclick = () => el("settings-panel").showModal();
+el("settings-close").onclick = () => el("settings-panel").close();
+el("settings-done").onclick = () => el("settings-panel").close();
+el("settings-panel").onclick = event => {
+  if (event.target === el("settings-panel")) el("settings-panel").close();
 };
-
-el("save").onclick = async () => {
-  if (!player) return;
-  el("save").disabled = true;
-  say("Saving files…");
-  try {
-    const saved = await player.save();
-    say(saved ? "Saved on this device." : "No file changes to save.");
-  } catch (e) {
-    say("Save failed: " + e.message);
-  } finally {
-    el("save").disabled = false;
+el("backend-setting").onchange = async event => {
+  const value = event.target.value;
+  if (value === backendPref) return;
+  if (player) {
+    say("Saving files before changing backend…");
+    try { await player.save(); } catch (e) { say("Could not save files: " + e.message); }
   }
+  backendPref = value;
+  try { localStorage.setItem("turbo-c-backend", value); } catch (e) {}
+  await run();
 };
-
-function triggerState(action, message) {
-  if (!ci) return;
-  ci.sendBackendEvent({ type: "wc-trigger-event", event: action });
-  say(message);
-}
-
-el("export-state").onclick = () =>
-  triggerState("hand_savestate", "DOSBox-X save-state action started.");
-
-el("import-state").onclick = () =>
-  triggerState("hand_loadstate", "DOSBox-X load-state action started.");
+el("aspect-setting").onchange = event => {
+  const value = aspectPref = event.target.value;
+  try { localStorage.setItem("turbo-c-aspect", value); } catch (e) {}
+  if (player) player.setRenderAspect(value);
+};
+el("render-setting").onchange = event => {
+  const value = renderPref = event.target.value;
+  try { localStorage.setItem("turbo-c-render", value); } catch (e) {}
+  if (player) player.setImageRendering(value);
+};
 
 const heldModifiers = new Set();
 document.querySelectorAll("[data-modifier]").forEach(key => {
@@ -211,7 +271,7 @@ if (matchMedia("(max-width: 620px)").matches) el("touch-keys").open = true;
 
 el("fullscreen").onclick = () => {
   if (!player) return;
-  player.setFullScreen(!fullscreen);
+  player.setFullScreen(true);
 };
 
 el("restart").onclick = async () => {
@@ -222,8 +282,6 @@ el("restart").onclick = async () => {
   } catch (e) {
     say("Save failed; restarting anyway…");
   }
-  paused = false;
-  el("pause").textContent = "Pause";
   await run();
 };
 
