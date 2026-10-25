@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Turbo C Runner</title>
+<link rel="stylesheet" href="https://v8.js-dos.com/latest/js-dos.css">
+<script src="https://v8.js-dos.com/latest/js-dos.js"></script>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #101114; color: #e8e9ed; font: 15px/1.5 system-ui, sans-serif; }
+  .shell { max-width: 1120px; margin: 0 auto; padding: 20px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 12px; background: #1b1d22; border: 1px solid #30333b; border-radius: 12px 12px 0 0; }
+  .brand { font-weight: 700; margin: 0 auto 0 4px; }
+  button { font: inherit; color: inherit; background: #292c33; border: 1px solid #424650; padding: 8px 13px; border-radius: 7px; cursor: pointer; }
+  button:hover:not(:disabled) { background: #373b44; }
+  button:disabled { opacity: .5; cursor: wait; }
+  button.primary { background: #315cba; border-color: #4775d4; }
+  button.primary:hover:not(:disabled) { background: #3c6bd0; }
+  button:focus-visible, summary:focus-visible { outline: 2px solid #8bb4ff; outline-offset: 2px; }
+  #status { color: #b9bdc8; font-size: 13px; min-height: 20px; margin: 10px 4px 0; }
+  #help { max-width: 760px; margin: 24px auto; padding: 0 16px; color: #b9bdc8; }
+  #screen { overflow: hidden; border: 1px solid #30333b; border-top: 0; border-radius: 0 0 12px 12px; background: #000; }
+  #dos { width: 100%; height: min(62vh, 640px); min-height: 360px; margin: 0 auto; }
+  #dos:empty { display: none; }
+  .touch-keys { margin-top: 12px; border: 1px solid #30333b; border-radius: 10px; background: #1b1d22; }
+  .touch-keys summary { padding: 11px 14px; cursor: pointer; font-weight: 600; touch-action: manipulation; }
+  .keypad { padding: 8px; display: grid; gap: 5px; }
+  .key-row { display: flex; gap: 4px; justify-content: center; }
+  .key-row button { min-width: 0; min-height: 42px; flex: 1; padding: 5px 2px; font-size: 13px; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+  .key-row button.wide { flex: 1.7; }
+  .key-row button.space { flex: 4; }
+  .key-row button.active { background: #315cba; border-color: #8bb4ff; }
+  .key-row.function-row { overflow-x: auto; justify-content: flex-start; }
+  .key-row.function-row button { flex: 0 0 38px; }
+  @media (max-width: 620px) {
+    .shell { padding: 10px; }
+    .brand { width: 100%; }
+    #dos { min-height: 240px; height: 42vh; }
+    .bar { gap: 7px; padding: 9px; }
+    .bar button { min-height: 42px; padding: 7px 9px; }
+    #help { padding: 0 4px; }
+  }
+</style>
+</head>
+<body>
+<main class="shell">
+  <div class="bar" role="toolbar" aria-label="Turbo C controls">
+    <span class="brand">Turbo C</span>
+    <button id="pause" disabled>Pause</button>
+    <button id="save" class="primary" disabled>Save files</button>
+    <button id="export-state" disabled>Export state</button>
+    <button id="import-state" disabled>Import state</button>
+    <button id="fullscreen" disabled>Fullscreen</button>
+    <button id="restart" disabled>Restart</button>
+  </div>
+  <div id="screen"><div id="dos"></div></div>
+  <details id="touch-keys" class="touch-keys">
+    <summary>On-screen keyboard</summary>
+    <div class="keypad" aria-label="Turbo C touch keyboard">
+      <div class="key-row function-row">
+        <button data-key="290" disabled>F1</button><button data-key="291" disabled>F2</button>
+        <button data-key="292" disabled>F3</button><button data-key="293" disabled>F4</button>
+        <button data-key="294" disabled>F5</button><button data-key="295" disabled>F6</button>
+        <button data-key="296" disabled>F7</button><button data-key="297" disabled>F8</button>
+        <button data-key="298" disabled>F9</button><button data-key="299" disabled>F10</button>
+        <button data-key="300" disabled>F11</button><button data-key="301" disabled>F12</button>
+      </div>
+      <div class="key-row">
+        <button data-key="49" disabled>1</button><button data-key="50" disabled>2</button><button data-key="51" disabled>3</button><button data-key="52" disabled>4</button><button data-key="53" disabled>5</button><button data-key="54" disabled>6</button><button data-key="55" disabled>7</button><button data-key="56" disabled>8</button><button data-key="57" disabled>9</button><button data-key="48" disabled>0</button><button data-key="45" disabled>-</button><button data-key="61" disabled>=</button>
+      </div>
+      <div class="key-row">
+        <button data-key="81" disabled>Q</button><button data-key="87" disabled>W</button><button data-key="69" disabled>E</button><button data-key="82" disabled>R</button><button data-key="84" disabled>T</button><button data-key="89" disabled>Y</button><button data-key="85" disabled>U</button><button data-key="73" disabled>I</button><button data-key="79" disabled>O</button><button data-key="80" disabled>P</button><button data-key="91" disabled>[</button><button data-key="93" disabled>]</button><button data-key="92" disabled>&#92;</button>
+      </div>
+      <div class="key-row">
+        <button data-key="65" disabled>A</button><button data-key="83" disabled>S</button><button data-key="68" disabled>D</button><button data-key="70" disabled>F</button><button data-key="71" disabled>G</button><button data-key="72" disabled>H</button><button data-key="74" disabled>J</button><button data-key="75" disabled>K</button><button data-key="76" disabled>L</button><button data-key="59" disabled>;</button><button data-key="39" disabled>'</button>
+      </div>
+      <div class="key-row">
+        <button class="wide" data-modifier="340" disabled>Shift</button><button data-key="90" disabled>Z</button><button data-key="88" disabled>X</button><button data-key="67" disabled>C</button><button data-key="86" disabled>V</button><button data-key="66" disabled>B</button><button data-key="78" disabled>N</button><button data-key="77" disabled>M</button><button data-key="44" disabled>,</button><button data-key="46" disabled>.</button><button data-key="47" disabled>/</button><button class="wide" data-key="259" disabled>⌫</button>
+      </div>
+      <div class="key-row">
+        <button data-key="256" disabled>Esc</button><button data-key="258" disabled>Tab</button><button data-modifier="341" disabled>Ctrl</button><button data-modifier="342" disabled>Alt</button><button data-key="263" disabled>←</button><button data-key="265" disabled>↑</button><button data-key="264" disabled>↓</button><button data-key="262" disabled>→</button><button data-key="257" disabled>Enter</button>
+      </div>
+      <div class="key-row"><button class="space" data-key="32" disabled>Space</button></div>
+    </div>
+  </details>
+  <div id="status" role="status" aria-live="polite">Starting…</div>
+  <div id="help"><p><b>Save files</b> keeps disk changes in this browser. <b>Export state</b> and <b>Import state</b> use DOSBox-X snapshots to save or restore the full running machine.</p></div>
+</main>
+<script>
+(() => {
+const el = id => document.getElementById(id);
+const say = t => { el("status").textContent = t; };
+let player = null;
+let ci = null;
+let paused = false;
+let fullscreen = false;
+let bundleUrl = "./turboc.jsdos";
+const controls = ["pause", "save", "export-state", "import-state", "fullscreen", "restart"];
+const enableControls = enabled => {
+  controls.forEach(id => { el(id).disabled = !enabled; });
+  document.querySelectorAll("[data-key], [data-modifier]").forEach(key => { key.disabled = !enabled; });
+};
+
+async function run() {
+  if (player) { try { await player.stop(); } catch (e) {} player = null; ci = null; }
+  el("dos").innerHTML = "";
+  fullscreen = false;
+  el("fullscreen").textContent = "Fullscreen";
+  enableControls(false);
+  say("Starting Turbo C…");
+  player = Dos(el("dos"), {
+    url: bundleUrl,
+    backend: "dosboxX",
+    backendLocked: true,
+    autoStart: true,
+    autoSave: true,
+    kiosk: true,
+    quickSave: false,
+    workerThread: true,
+    offscreenCanvas: typeof OffscreenCanvas !== "undefined",
+    renderBackend: "webgl",
+    imageRendering: "pixelated",
+    theme: "dark",
+    onEvent: (event, arg) => {
+      if (event === "ci-ready") {
+        ci = arg;
+        enableControls(true);
+        say("Ready. Click the screen to use the keyboard.");
+      }
+      if (event === "fullscreen-change") {
+        fullscreen = !!arg;
+        el("fullscreen").textContent = fullscreen ? "Exit fullscreen" : "Fullscreen";
+      }
+    }
+  });
+}
+
+async function start() {
+  try {
+    say("Loading Turbo C...");
+    const response = await fetch(bundleUrl, { method: "HEAD" });
+    if (!response.ok) throw new Error("Could not load turboc.jsdos (" + response.status + ").");
+    await run();
+  } catch (e) {
+    enableControls(false);
+    say("Could not start Turbo C: " + e.message);
+  }
+}
+
+el("pause").onclick = () => {
+  if (!player) return;
+  paused = !paused;
+  player.setPaused(paused);
+  el("pause").textContent = paused ? "Resume" : "Pause";
+  say(paused ? "Paused." : "Running.");
+};
+
+el("save").onclick = async () => {
+  if (!player) return;
+  el("save").disabled = true;
+  say("Saving files…");
+  try {
+    const saved = await player.save();
+    say(saved ? "Saved on this device." : "No file changes to save.");
+  } catch (e) {
+    say("Save failed: " + e.message);
+  } finally {
+    el("save").disabled = false;
+  }
+};
+
+function triggerState(action, message) {
+  if (!ci) return;
+  ci.sendBackendEvent({ type: "wc-trigger-event", event: action });
+  say(message);
+}
+
+el("export-state").onclick = () =>
+  triggerState("hand_savestate", "DOSBox-X save-state action started.");
+
+el("import-state").onclick = () =>
+  triggerState("hand_loadstate", "DOSBox-X load-state action started.");
+
+const heldModifiers = new Set();
+document.querySelectorAll("[data-modifier]").forEach(key => {
+  key.onclick = () => {
+    if (!ci) return;
+    const code = Number(key.dataset.modifier);
+    const down = !heldModifiers.has(code);
+    heldModifiers[down ? "add" : "delete"](code);
+    ci.sendKeyEvent(code, down);
+    key.classList.toggle("active", down);
+    key.setAttribute("aria-pressed", String(down));
+  };
+});
+document.querySelectorAll("[data-key]").forEach(key => {
+  key.onclick = () => { if (ci) ci.simulateKeyPress(Number(key.dataset.key)); };
+});
+addEventListener("blur", () => {
+  if (!ci) return;
+  heldModifiers.forEach(code => ci.sendKeyEvent(code, false));
+  heldModifiers.clear();
+  document.querySelectorAll("[data-modifier]").forEach(key => {
+    key.classList.remove("active");
+    key.setAttribute("aria-pressed", "false");
+  });
+});
+
+if (matchMedia("(max-width: 620px)").matches) el("touch-keys").open = true;
+
+el("fullscreen").onclick = () => {
+  if (!player) return;
+  player.setFullScreen(!fullscreen);
+};
+
+el("restart").onclick = async () => {
+  if (!player) return;
+  try {
+    say("Saving before restart…");
+    await player.save();
+  } catch (e) {
+    say("Save failed; restarting anyway…");
+  }
+  paused = false;
+  el("pause").textContent = "Pause";
+  await run();
+};
+
+start();
+})();
+</script>
+</body>
+</html>
