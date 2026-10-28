@@ -432,18 +432,20 @@ const releaseModifiersAfterKey = () => {
   });
 };
 
-const SHIFT_LEAD_MS = 160;
-const SHIFT_HOLD_MS = 120;
-const SHIFT_TRAIL_MS = 100;
 const pressKey = (code, shift = false) => {
   if (!ci) return;
   const needShift = shift && !heldModifiers.has(340) && !heldModifiers.has(344);
   enqueue(async c => {
-    if (needShift) { sendKeyEvent(c, 340, false); await sleep(KEY_GAP_MS); sendKeyEvent(c, 340, true); await sleep(SHIFT_LEAD_MS); }
+    if (needShift && typeof c.simulateKeyPress === "function") {
+      c.simulateKeyPress(340, code);
+      await sleep(120);
+      return;
+    }
+    if (needShift) { sendKeyEvent(c, 340, true); sendKeyEvent(c, 344, true); await sleep(160); }
     sendKeyEvent(c, code, true);
-    await sleep(needShift ? SHIFT_HOLD_MS : KEY_DOWN_MS);
+    await sleep(needShift ? 120 : KEY_DOWN_MS);
     sendKeyEvent(c, code, false);
-    if (needShift) { await sleep(SHIFT_TRAIL_MS); sendKeyEvent(c, 340, false); }
+    if (needShift) { await sleep(100); sendKeyEvent(c, 340, false); sendKeyEvent(c, 344, false); }
     await sleep(KEY_GAP_MS);
   });
   releaseModifiersAfterKey();
