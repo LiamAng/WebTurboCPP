@@ -470,8 +470,27 @@ const charToKey = raw => {
   if (Object.prototype.hasOwnProperty.call(shiftedSymbols, ch)) return { code: shiftedSymbols[ch], shift: true };
   return null;
 };
+const altCode = ch => {
+  if (!ci) return;
+  const digits = String(ch.charCodeAt(0));
+  enqueue(async c => {
+    sendKeyEvent(c, 342, true);
+    await sleep(50);
+    for (const d of digits) {
+      const k = 320 + Number(d);
+      sendKeyEvent(c, k, true);
+      await sleep(45);
+      sendKeyEvent(c, k, false);
+      await sleep(45);
+    }
+    sendKeyEvent(c, 342, false);
+    await sleep(60);
+  });
+};
 const typeText = text => {
-  for (const ch of text) {
+  for (const raw of text) {
+    const ch = charAliases[raw] || raw;
+    if (Object.prototype.hasOwnProperty.call(shiftedSymbols, ch)) { altCode(ch); continue; }
     const key = charToKey(ch);
     if (key) pressKey(key.code, !!key.shift);
   }
@@ -984,4 +1003,4 @@ start();
 })();
 </script>
 </body>
-</html>
+  </html>
