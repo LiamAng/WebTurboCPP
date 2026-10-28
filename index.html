@@ -436,16 +436,11 @@ const pressKey = (code, shift = false) => {
   if (!ci) return;
   const needShift = shift && !heldModifiers.has(340) && !heldModifiers.has(344);
   enqueue(async c => {
-    if (needShift && typeof c.simulateKeyPress === "function") {
-      c.simulateKeyPress(340, code);
-      await sleep(120);
-      return;
-    }
-    if (needShift) { sendKeyEvent(c, 340, true); sendKeyEvent(c, 344, true); await sleep(160); }
+    if (needShift) { sendKeyEvent(c, 340, true); await sleep(120); }
     sendKeyEvent(c, code, true);
-    await sleep(needShift ? 120 : KEY_DOWN_MS);
+    await sleep(needShift ? 90 : KEY_DOWN_MS);
     sendKeyEvent(c, code, false);
-    if (needShift) { await sleep(100); sendKeyEvent(c, 340, false); sendKeyEvent(c, 344, false); }
+    if (needShift) { await sleep(90); sendKeyEvent(c, 340, false); }
     await sleep(KEY_GAP_MS);
   });
   releaseModifiersAfterKey();
@@ -470,27 +465,9 @@ const charToKey = raw => {
   if (Object.prototype.hasOwnProperty.call(shiftedSymbols, ch)) return { code: shiftedSymbols[ch], shift: true };
   return null;
 };
-const altCode = ch => {
-  if (!ci) return;
-  const digits = String(ch.charCodeAt(0));
-  enqueue(async c => {
-    sendKeyEvent(c, 342, true);
-    await sleep(50);
-    for (const d of digits) {
-      const k = 320 + Number(d);
-      sendKeyEvent(c, k, true);
-      await sleep(45);
-      sendKeyEvent(c, k, false);
-      await sleep(45);
-    }
-    sendKeyEvent(c, 342, false);
-    await sleep(60);
-  });
-};
 const typeText = text => {
   for (const raw of text) {
     const ch = charAliases[raw] || raw;
-    if (Object.prototype.hasOwnProperty.call(shiftedSymbols, ch)) { altCode(ch); continue; }
     const key = charToKey(ch);
     if (key) pressKey(key.code, !!key.shift);
   }
@@ -902,13 +879,24 @@ const nativeKeyCodes = {
   ArrowLeft: 263, ArrowUp: 265, ArrowDown: 264, ArrowRight: 262,
   Insert: 260, Delete: 261, PageUp: 266, PageDown: 267, Home: 268, End: 269
 };
-kbd.addEventListener("keydown", event => {
+const swallowKbd = event => {
+  if (event.target !== kbd) return;
+  event.stopImmediatePropagation();
+};
+document.addEventListener("keyup", swallowKbd, true);
+document.addEventListener("keypress", swallowKbd, true);
+document.addEventListener("keydown", event => {
+  if (event.target !== kbd) return;
+  event.stopImmediatePropagation();
+  if (event.key === "#") showToast("kbd # key=" + event.key + " code=" + event.code + " kc=" + event.keyCode + " shift=" + event.shiftKey);
   if (!ci || event.isComposing || event.keyCode === 229) return;
   const code = nativeKeyCodes[event.key];
-  if (code === undefined) return;
-  event.preventDefault();
-  pressKey(code);
-});
+  if (code !== undefined) { event.preventDefault(); pressKey(code); return; }
+  if (event.key.length === 1 && !event.ctrlKey && !event.altKey && !event.metaKey) {
+    event.preventDefault();
+    typeText(event.key);
+  }
+}, true);
 kbd.addEventListener("compositionstart", () => { kbdComposing = true; });
 kbd.addEventListener("compositionend", () => {
   kbdComposing = false;
@@ -1003,4 +991,4 @@ start();
 })();
 </script>
 </body>
-  </html>
+</html>
