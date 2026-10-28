@@ -101,7 +101,7 @@
   .toggle-setting input { width: 20px; height: 20px; accent-color: #8bb4ff; }
   .phone-only-setting { display: none; }
   .settings-done { width: 100%; min-height: 42px; background: #315cba; border-color: #4775d4; }
-  .native-keyboard-input { position: fixed; z-index: 1; left: 50%; top: 50%; width: 1px; height: 1px; padding: 0; border: 0; opacity: 0; pointer-events: none; font-size: 16px; }
+  .native-keyboard-input { position: fixed; z-index: 1; left: 50%; top: 50%; width: 1px; height: 1px; padding: 0; border: 0; opacity: 0; pointer-events: none; font-size: 16px; resize: none; caret-color: transparent; -webkit-user-select: text; user-select: text; }
   .input-toast { position: fixed; z-index: 1000; left: 50%; bottom: max(20px, env(safe-area-inset-bottom)); transform: translate(-50%, 12px); max-width: calc(100vw - 32px); padding: 12px 18px; color: #fff; background: #202329; border: 1px solid #535b69; border-radius: 8px; box-shadow: 0 8px 30px rgb(0 0 0 / .45); text-align: center; opacity: 0; pointer-events: none; transition: opacity .18s ease, transform .18s ease; }
   .input-toast.visible { opacity: 1; transform: translate(-50%, 0); }
   .esc-hint { position: fixed; z-index: 1000; right: max(12px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); padding: 8px 12px; color: #cdd3de; background: rgb(32 35 41 / .88); border: 1px solid #535b69; border-radius: 8px; font-size: 12px; line-height: 1.4; text-align: right; pointer-events: none; }
@@ -256,8 +256,6 @@ let escapeDownSent = false;
 let wheelRemainder = 0;
 const bundleUrl = "./turboc.jsdos?v=5";
 const changesKey = "turbo-c-project-files-v5.changes";
-// Migrate previously saved project files so the bumped key starts with the
-// same data instead of dropping user work.
 try {
   if (localStorage.getItem(changesKey) === null) {
     const legacy = localStorage.getItem("turbo-c-project-files-v3.changes");
@@ -321,6 +319,9 @@ const enableControls = enabled => {
 };
 
 async function run() {
+  queueEpoch += 1;
+  heldModifiers.clear();
+  syncModifierUi();
   if (player) {
     try { await player.stop(); } catch {}
     player = null;
@@ -385,29 +386,90 @@ function showToast(message) {
     setTimeout(() => { if (!toast.classList.contains("visible")) toast.hidden = true; }, 200);
   }, 4200);
 }
+const KEY_DOWN_MS = 35;
+const KEY_GAP_MS = 20;
+const MAX_QUEUED = 300;
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+const heldModifiers = new Set();
+let queue = Promise.resolve();
+let queued = 0;
+let queueEpoch = 0;
 
-const pressKey = (code, count = 1) => {
-  if (!ci) return;
-  for (let index = 0; index < count; index += 1) ci.simulateKeyPress(code);
+const sendKeyEvent = (target, code, down) => {
+  try { target.sendKeyEvent(code, down); } catch {}
+};
+const enqueue = task => {
+  if (queued >= MAX_QUEUED) return;
+  const epoch = queueEpoch;
+  queued += 1;
+  queue = queue
+    .then(() => (epoch === queueEpoch && ci ? task(ci) : undefined))
+    .catch(() => {})
+    .then(() => { queued -= 1; });
 };
 
-// The Turbo C++ editor expects a real Tab keycode, not spaces. Send a clean
-// down/up pair like the js-dos editor-bridge pattern; rapid synthetic space
-// presses wedge the DOS keyboard layer until reload.
-const tabPress = () => {
-  if (!ci) return;
-  ci.sendKeyEvent(258, true);
-  setTimeout(() => {
-    if (ci) ci.sendKeyEvent(258, false);
-  }, 40);
+const syncModifierUi = () => {
+  document.querySelectorAll("[data-modifier]").forEach(key => {
+    const on = heldModifiers.has(Number(key.dataset.modifier));
+    key.classList.toggle("active", on);
+    key.setAttribute("aria-pressed", String(on));
+  });
+};
+const releaseModifiersNow = () => {
+  const codes = [...heldModifiers];
+  heldModifiers.clear();
+  syncModifierUi();
+  if (ci) codes.forEach(code => sendKeyEvent(ci, code, false));
+};
+const releaseModifiersAfterKey = () => {
+  if (!heldModifiers.size) return;
+  const codes = [...heldModifiers];
+  heldModifiers.clear();
+  syncModifierUi();
+  enqueue(async c => {
+    codes.forEach(code => sendKeyEvent(c, code, false));
+    await sleep(KEY_GAP_MS);
+  });
 };
 
-const escPress = () => {
+const pressKey = (code, shift = false) => {
   if (!ci) return;
-  ci.sendKeyEvent(256, true);
-  setTimeout(() => {
-    if (ci) ci.sendKeyEvent(256, false);
-  }, 40);
+  const needShift = shift && !heldModifiers.has(340) && !heldModifiers.has(344);
+  enqueue(async c => {
+    if (needShift) { sendKeyEvent(c, 340, true); await sleep(KEY_GAP_MS); }
+    sendKeyEvent(c, code, true);
+    await sleep(KEY_DOWN_MS);
+    sendKeyEvent(c, code, false);
+    if (needShift) { await sleep(KEY_GAP_MS); sendKeyEvent(c, 340, false); }
+    await sleep(KEY_GAP_MS);
+  });
+  releaseModifiersAfterKey();
+};
+const tabPress = () => pressKey(258);
+const escPress = () => pressKey(256);
+const shiftedSymbols = {
+  "!": 49, "@": 50, "#": 51, "$": 52, "%": 53, "^": 54, "&": 55, "*": 56, "(": 57, ")": 48,
+  "_": 45, "+": 61, "{": 91, "}": 93, "|": 92, ":": 59, '"': 39, "<": 44, ">": 46, "?": 47, "~": 96
+};
+const plainSymbols = "'`,-./;=[\\]";
+const charAliases = { "\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"', "\u2013": "-", "\u2014": "-", "\u00a0": " " };
+const charToKey = raw => {
+  const ch = charAliases[raw] || raw;
+  if (ch === "\n" || ch === "\r") return { code: 257 };
+  if (ch === "\t") return { code: 258 };
+  if (ch === " ") return { code: 32 };
+  if (ch >= "a" && ch <= "z") return { code: ch.toUpperCase().charCodeAt(0) };
+  if (ch >= "A" && ch <= "Z") return { code: ch.charCodeAt(0), shift: true };
+  if (ch >= "0" && ch <= "9") return { code: ch.charCodeAt(0) };
+  if (ch.length === 1 && plainSymbols.includes(ch)) return { code: ch.charCodeAt(0) };
+  if (Object.prototype.hasOwnProperty.call(shiftedSymbols, ch)) return { code: shiftedSymbols[ch], shift: true };
+  return null;
+};
+const typeText = text => {
+  for (const ch of text) {
+    const key = charToKey(ch);
+    if (key) pressKey(key.code, !!key.shift);
+  }
 };
 
 const setSaveStatus = status => {
@@ -575,10 +637,6 @@ document.addEventListener("keydown", event => {
   }
   const escChord = event.code === "Backquote" || event.key === "`" || event.key === "~";
   if (!escapeHoldAvailable && event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey && escChord) {
-    // Fallback for browsers without Keyboard Lock (Firefox, etc.): plain Esc is
-    // reserved by the browser to release the mouse, so Ctrl+` sends Esc to
-    // Turbo C++ instead. Chord chosen because Turbo C++'s editor keymaps (CUA +
-    // WordStar) never bind it, and no browser or OS reserves Ctrl+backquote.
     event.preventDefault();
     event.stopImmediatePropagation();
     escPress();
@@ -588,8 +646,6 @@ document.addEventListener("keydown", event => {
     event.preventDefault();
     event.stopImmediatePropagation();
     if (!escapeHoldTimer && !escapeReleaseTriggered) {
-      // Esc reaches Turbo C++ even while captured: press down immediately.
-      // Releasing before the threshold completes a tap; holding releases the mouse.
       if (ci && !escapeDownSent) {
         ci.sendKeyEvent(256, true);
         escapeDownSent = true;
@@ -616,7 +672,6 @@ document.addEventListener("keyup", event => {
   event.preventDefault();
   event.stopImmediatePropagation();
   if (escapeHoldTimer) {
-    // Quick tap: complete the Esc press inside Turbo C++.
     clearTimeout(escapeHoldTimer);
     escapeHoldTimer = 0;
     if (ci && escapeDownSent) {
@@ -708,14 +763,74 @@ el("desktop-keyboard-setting").onchange = event => {
   touchKeys.open = desktopKeyboardPref;
 };
 
-el("screen").addEventListener("click", () => {
-  if (phoneLayout.matches && nativeKeyboardPref && ci) {
-    el("native-keyboard-input").focus({ preventScroll: true });
-  }
-});
-el("native-keyboard-open").onclick = () => {
-  if (phoneLayout.matches && nativeKeyboardPref) el("native-keyboard-input").focus({ preventScroll: true });
+const kbd = el("native-keyboard-input");
+const KBD_SENTINEL = " ";
+let kbdPrev = KBD_SENTINEL;
+let kbdComposing = false;
+let lastKbdOpen = 0;
+const resetKbd = () => {
+  if (kbd.value !== KBD_SENTINEL) kbd.value = KBD_SENTINEL;
+  kbdPrev = KBD_SENTINEL;
+  try { kbd.setSelectionRange(KBD_SENTINEL.length, KBD_SENTINEL.length); } catch {}
 };
+resetKbd();
+
+const viewportHeight = () => {
+  const vv = window.visualViewport;
+  return Math.min(window.innerHeight, vv ? vv.height : window.innerHeight);
+};
+let baseViewportH = Math.max(window.innerHeight, window.visualViewport ? window.visualViewport.height : 0);
+let lastViewportH = viewportHeight();
+const keyboardLooksOpen = () => {
+  const vv = window.visualViewport;
+  baseViewportH = Math.max(baseViewportH, window.innerHeight, vv ? vv.height : 0);
+  if (vv && Math.abs(vv.scale - 1) > 0.01) return false;
+  return baseViewportH - viewportHeight() > 120;
+};
+const onViewportChange = () => {
+  const height = viewportHeight();
+  const closing = height > lastViewportH + 40;
+  lastViewportH = height;
+  if (closing && document.activeElement === kbd && !keyboardLooksOpen()) kbd.blur();
+};
+addEventListener("resize", onViewportChange);
+if (window.visualViewport) window.visualViewport.addEventListener("resize", onViewportChange);
+addEventListener("orientationchange", () => {
+  baseViewportH = 0;
+  lastViewportH = viewportHeight();
+});
+
+function openNativeKeyboard() {
+  if (!phoneLayout.matches || !nativeKeyboardPref || !ci) return;
+  const now = performance.now();
+  if (now - lastKbdOpen < 350) return;
+  lastKbdOpen = now;
+  if (document.activeElement === kbd) {
+    if (keyboardLooksOpen()) return;
+    kbd.blur();
+  }
+  kbd.focus({ preventScroll: true });
+}
+
+el("screen").addEventListener("mousedown", event => {
+  if (phoneLayout.matches && nativeKeyboardPref) event.preventDefault();
+}, true);
+let tapStart = null;
+el("screen").addEventListener("touchstart", event => {
+  const t = event.touches[0];
+  tapStart = event.touches.length === 1 && t ? { x: t.clientX, y: t.clientY, at: performance.now() } : null;
+}, { passive: true, capture: true });
+el("screen").addEventListener("touchend", event => {
+  const start = tapStart;
+  tapStart = null;
+  const t = event.changedTouches[0];
+  if (!start || !t || event.touches.length) return;
+  if (Math.hypot(t.clientX - start.x, t.clientY - start.y) > 12 || performance.now() - start.at > 700) return;
+  openNativeKeyboard();
+}, { passive: true, capture: true });
+el("screen").addEventListener("click", openNativeKeyboard);
+el("native-keyboard-open").onclick = openNativeKeyboard;
+
 el("screen").addEventListener("pointerdown", event => {
   if (!phoneLayout.matches || !touchCursorPref || !ci || event.pointerType !== "touch") return;
   event.preventDefault();
@@ -763,65 +878,58 @@ const nativeKeyCodes = {
   ArrowLeft: 263, ArrowUp: 265, ArrowDown: 264, ArrowRight: 262,
   Insert: 260, Delete: 261, PageUp: 266, PageDown: 267, Home: 268, End: 269
 };
-el("native-keyboard-input").addEventListener("keydown", event => {
-  if (!ci) return;
+kbd.addEventListener("keydown", event => {
+  if (!ci || event.isComposing || event.keyCode === 229) return;
   const code = nativeKeyCodes[event.key];
   if (code === undefined) return;
   event.preventDefault();
-  if (code === 258) {
-    tabPress();
-  } else {
-    pressKey(code);
-  }
+  pressKey(code);
 });
-el("native-keyboard-input").addEventListener("input", event => {
-  if (!ci) return;
-  for (const character of event.target.value) {
-    const code = character.toUpperCase().charCodeAt(0);
-    if (code < 32 || code > 126) continue;
-    const uppercase = character >= "A" && character <= "Z";
-    if (uppercase) ci.sendKeyEvent(340, true);
-    pressKey(code);
-    if (uppercase) ci.sendKeyEvent(340, false);
-  }
-  event.target.value = "";
+kbd.addEventListener("compositionstart", () => { kbdComposing = true; });
+kbd.addEventListener("compositionend", () => {
+  kbdComposing = false;
+  setTimeout(() => { if (!kbdComposing) resetKbd(); }, 0);
 });
 
-const heldModifiers = new Set();
-const releaseModifiers = () => {
-  if (!ci) return;
-  heldModifiers.forEach(code => ci.sendKeyEvent(code, false));
-  heldModifiers.clear();
-  document.querySelectorAll("[data-modifier]").forEach(key => {
-    key.classList.remove("active");
-    key.setAttribute("aria-pressed", "false");
-  });
-};
+kbd.addEventListener("input", event => {
+  const value = kbd.value;
+  const prev = kbdPrev;
+  kbdPrev = value;
+  if (ci) {
+    const max = Math.min(prev.length, value.length);
+    let common = 0;
+    while (common < max && prev[common] === value[common]) common += 1;
+    for (let i = prev.length - common; i > 0; i -= 1) pressKey(259);
+    typeText(value.slice(common));
+  }
+  if (!event.isComposing && !kbdComposing) resetKbd();
+});
+kbd.addEventListener("focus", resetKbd);
+kbd.addEventListener("blur", () => { kbdComposing = false; resetKbd(); });
+
 document.querySelectorAll("[data-modifier]").forEach(key => {
   key.onclick = () => {
     if (!ci) return;
     const code = Number(key.dataset.modifier);
     const down = !heldModifiers.has(code);
     heldModifiers[down ? "add" : "delete"](code);
-    ci.sendKeyEvent(code, down);
-    key.classList.toggle("active", down);
-    key.setAttribute("aria-pressed", String(down));
+    syncModifierUi();
+    enqueue(async c => { sendKeyEvent(c, code, down); await sleep(KEY_GAP_MS); });
   };
 });
 document.querySelectorAll("[data-key]").forEach(key => {
   key.onclick = () => {
     if (!ci) return;
-    const code = Number(key.dataset.key);
-    if (code === 258) {
-      tabPress();
-    } else {
-      pressKey(code);
-    }
-    if (heldModifiers.size) releaseModifiers();
+    pressKey(Number(key.dataset.key));
   };
 });
-addEventListener("blur", () => {
-  releaseModifiers();
+
+touchKeys.addEventListener("mousedown", event => {
+  if (phoneLayout.matches && nativeKeyboardPref && event.target.closest("button, summary")) event.preventDefault();
+});
+const resetInputState = () => {
+  queueEpoch += 1;
+  releaseModifiersNow();
   if (escapeDownSent) {
     if (ci) ci.sendKeyEvent(256, false);
     escapeDownSent = false;
@@ -834,7 +942,10 @@ addEventListener("blur", () => {
     touchCursorPointerId = null;
     touchCursorMoved = false;
   }
-});
+};
+addEventListener("blur", resetInputState);
+addEventListener("pagehide", resetInputState);
+document.addEventListener("visibilitychange", () => { if (document.hidden) resetInputState(); });
 
 if (phoneLayout.matches || desktopKeyboardPref) touchKeys.open = true;
 phoneLayout.addEventListener("change", () => {
