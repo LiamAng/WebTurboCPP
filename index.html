@@ -113,6 +113,19 @@
     .desktop-only-setting { display: none; }
     .phone-only-setting { display: flex; }
   }
+  .files-path { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 10px; font-size: 13px; color: #b9bdc8; word-break: break-all; }
+  .files-path button { padding: 3px 8px; font-size: 13px; }
+  .files-list { max-height: 50vh; overflow-y: auto; margin-bottom: 14px; border: 1px solid #424650; border-radius: 6px; background: #22252b; }
+  .files-row { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 4px 10px; border-bottom: 1px solid #30333b; }
+  .files-row:last-child { border-bottom: 0; }
+  .files-row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .files-row .meta { color: #8f95a3; font-size: 12px; }
+  .files-row.dir { cursor: pointer; }
+  .files-row.dir:hover { background: #2b2f37; }
+  .files-row button { padding: 5px 10px; font-size: 13px; }
+  .files-empty { padding: 16px; color: #8f95a3; text-align: center; }
+  .files-actions { display: flex; gap: 8px; }
+  .files-actions button { flex: 1; min-height: 42px; }
   @media (max-width: 620px) {
     .shell { padding: 10px; }
     .bar { gap: 7px; padding: 9px; }
@@ -144,6 +157,9 @@
     <button id="save" class="icon-button" disabled aria-label="Save files" title="Save">
       <img class="white-icon" src="./assets/icons/save.svg" alt="">
       <span class="save-indicator" aria-hidden="true"></span>
+    </button>
+    <button id="files-open" class="icon-button" disabled aria-label="Browse files" title="Files">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2.5h8.5A1.5 1.5 0 0 1 21 9v8.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>
     </button>
     <button id="settings-open" class="icon-button" aria-label="Open settings" title="Settings">
       <img src="./assets/icons/settings.svg" alt="">
@@ -199,6 +215,20 @@
     </div>
   </details>
 </main>
+<dialog id="files-panel" aria-labelledby="files-title">
+  <div class="settings-head">
+    <h2 id="files-title">Files</h2>
+    <button id="files-close" type="button" aria-label="Close files" title="Close files"><img src="./assets/icons/close.svg" alt=""></button>
+  </div>
+  <div class="settings-body">
+    <div id="files-path" class="files-path"></div>
+    <div id="files-list" class="files-list"></div>
+    <div class="files-actions">
+      <button id="files-refresh" type="button">Refresh</button>
+      <button id="files-zip" type="button">Download changes (.zip)</button>
+    </div>
+  </div>
+</dialog>
 <dialog id="settings-panel" aria-labelledby="settings-title">
   <div class="settings-head">
     <h2 id="settings-title">Settings</h2>
@@ -312,7 +342,7 @@ el("mouse-sensitivity-setting").value = String(sensitivityPref);
 el("mouse-sensitivity-value").value = Math.round(sensitivityPref * 100) + "%";
 applyKeyboardMode();
 applyTouchCursorMode();
-const controls = ["fullscreen", "restart", "save"];
+const controls = ["fullscreen", "restart", "save", "files-open"];
 const enableControls = enabled => {
   controls.forEach(id => { el(id).disabled = !enabled; });
   document.querySelectorAll("[data-key], [data-modifier]").forEach(key => { key.disabled = !enabled; });
@@ -722,6 +752,115 @@ async function start() {
   }
 }
 
+let filesRoot = null;
+let filesPath = [];
+const fmtSize = n => n == null ? "" : n < 1024 ? n + " B" : n < 1048576 ? (n / 1024).toFixed(1) + " KB" : (n / 1048576).toFixed(1) + " MB";
+const saveBlob = (bytes, name) => {
+  const url = URL.createObjectURL(new Blob([bytes], { type: "application/octet-stream" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+};
+const nodeAt = path => {
+  let node = filesRoot;
+  for (const name of path) {
+    node = node && node.nodes ? node.nodes.find(n => n.name === name) : null;
+    if (!node) return null;
+  }
+  return node;
+};
+const renderFiles = () => {
+  let node = nodeAt(filesPath);
+  if (!node || !node.nodes) { filesPath = []; node = filesRoot; }
+  const bar = el("files-path");
+  bar.innerHTML = "";
+  const crumb = (label, depth) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = label;
+    b.onclick = () => { filesPath = filesPath.slice(0, depth); renderFiles(); };
+    bar.appendChild(b);
+  };
+  crumb("C:", 0);
+  filesPath.forEach((name, i) => { bar.append("/"); crumb(name, i + 1); });
+  const list = el("files-list");
+  list.innerHTML = "";
+  const items = node && node.nodes ? [...node.nodes].sort((a, b) => (!!b.nodes - !!a.nodes) || a.name.localeCompare(b.name)) : [];
+  if (!items.length) {
+    const empty = document.createElement("div");
+    empty.className = "files-empty";
+    empty.textContent = "Empty";
+    list.appendChild(empty);
+    return;
+  }
+  for (const item of items) {
+    const row = document.createElement("div");
+    const isDir = !!item.nodes;
+    row.className = "files-row" + (isDir ? " dir" : "");
+    const name = document.createElement("span");
+    name.className = "name";
+    name.textContent = (isDir ? "\u{1F4C1} " : "") + item.name;
+    row.appendChild(name);
+    if (isDir) {
+      row.onclick = () => { filesPath = [...filesPath, item.name]; renderFiles(); };
+    } else {
+      const meta = document.createElement("span");
+      meta.className = "meta";
+      meta.textContent = fmtSize(item.size);
+      const dl = document.createElement("button");
+      dl.type = "button";
+      dl.textContent = "Download";
+      dl.onclick = () => downloadFile([...filesPath, item.name], item.name);
+      row.append(meta, dl);
+    }
+    list.appendChild(row);
+  }
+};
+const downloadFile = async (parts, name) => {
+  if (!ci) return;
+  const rel = parts.join("/");
+  for (const candidate of [rel, "/" + rel, rel.replace(/\//g, "\\"), "C:\\" + rel.replace(/\//g, "\\")]) {
+    try {
+      const data = await ci.fsReadFile(candidate);
+      if (data) { saveBlob(data, name); return; }
+    } catch {}
+  }
+  showToast("Could not read " + name);
+};
+const loadFiles = async () => {
+  if (!ci) return;
+  try {
+    filesRoot = await ci.fsTree();
+    renderFiles();
+  } catch (e) {
+    el("files-list").innerHTML = "";
+    const err = document.createElement("div");
+    err.className = "files-empty";
+    err.textContent = "Could not list files";
+    el("files-list").appendChild(err);
+  }
+};
+el("files-open").onclick = () => { el("files-panel").showModal(); loadFiles(); };
+el("files-close").onclick = () => el("files-panel").close();
+el("files-refresh").onclick = loadFiles;
+el("files-panel").onclick = event => {
+  if (event.target === el("files-panel")) el("files-panel").close();
+};
+el("files-zip").onclick = async () => {
+  if (!ci) return;
+  try {
+    const data = await ci.persist(true);
+    if (data) saveBlob(data, "turboc-changes.zip");
+    else showToast("No changes to download");
+  } catch (e) {
+    showToast("Could not export changes");
+  }
+};
+
 el("settings-open").onclick = () => el("settings-panel").showModal();
 el("settings-close").onclick = () => el("settings-panel").close();
 el("settings-done").onclick = () => el("settings-panel").close();
@@ -991,4 +1130,4 @@ start();
 })();
 </script>
 </body>
-</html>
+  </html>
