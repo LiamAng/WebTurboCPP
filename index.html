@@ -113,19 +113,30 @@
     .desktop-only-setting { display: none; }
     .phone-only-setting { display: flex; }
   }
+  #files-panel { width: min(640px, calc(100% - 28px)); }
   .files-path { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 10px; font-size: 13px; color: #b9bdc8; word-break: break-all; }
   .files-path button { padding: 3px 8px; font-size: 13px; }
-  .files-list { max-height: 50vh; overflow-y: auto; margin-bottom: 14px; border: 1px solid #424650; border-radius: 6px; background: #22252b; }
-  .files-row { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 4px 10px; border-bottom: 1px solid #30333b; }
+  .files-tools { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .files-tools button { min-height: 36px; padding: 6px 10px; font-size: 13px; }
+  .files-status { min-height: 20px; margin-bottom: 8px; color: #cbd8f2; font-size: 13px; }
+  .files-list { max-height: 42vh; overflow-y: auto; margin-bottom: 14px; border: 1px solid #424650; border-radius: 6px; background: #22252b; }
+  .files-row { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 4px 10px; border-bottom: 1px solid #30333b; cursor: pointer; }
   .files-row:last-child { border-bottom: 0; }
+  .files-row:hover { background: #2b2f37; }
+  .files-row.sel { background: #26396b; }
+  .files-row.cut { opacity: .5; }
+  .files-row input { flex: none; width: 20px; height: 20px; accent-color: #8bb4ff; }
   .files-row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .files-row .meta { color: #8f95a3; font-size: 12px; }
-  .files-row.dir { cursor: pointer; }
-  .files-row.dir:hover { background: #2b2f37; }
-  .files-row button { padding: 5px 10px; font-size: 13px; }
   .files-empty { padding: 16px; color: #8f95a3; text-align: center; }
   .files-actions { display: flex; gap: 8px; }
   .files-actions button { flex: 1; min-height: 42px; }
+  .ask-input { width: 100%; min-height: 42px; margin-top: 10px; padding: 8px; color: #e8e9ed; background: #292c33; border: 1px solid #555b68; border-radius: 6px; font: inherit; -webkit-user-select: text; user-select: text; }
+  .ask-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
+  .ask-actions button { min-width: 90px; min-height: 40px; }
+  .ask-actions .cancel { order: -1; }
+  .ask-actions .danger { background: #b4323f; border-color: #d24a58; }
+  #ask-message { margin: 0; white-space: pre-line; word-break: break-word; }
   @media (max-width: 620px) {
     .shell { padding: 10px; }
     .bar { gap: 7px; padding: 9px; }
@@ -222,12 +233,38 @@
   </div>
   <div class="settings-body">
     <div id="files-path" class="files-path"></div>
+    <div class="files-tools">
+      <button id="f-upload" type="button">Upload</button>
+      <button id="f-newdir" type="button">New folder</button>
+      <button id="f-download" type="button">Download</button>
+      <button id="f-rename" type="button">Rename</button>
+      <button id="f-cut" type="button">Cut</button>
+      <button id="f-copy" type="button">Copy</button>
+      <button id="f-paste" type="button">Paste</button>
+      <button id="f-delete" type="button">Delete</button>
+      <button id="f-all" type="button">Select all</button>
+    </div>
+    <div id="files-status" class="files-status" role="status" aria-live="polite"></div>
     <div id="files-list" class="files-list"></div>
     <div class="files-actions">
       <button id="files-refresh" type="button">Refresh</button>
       <button id="files-zip" type="button">Download changes (.zip)</button>
     </div>
+    <input id="f-upload-input" type="file" multiple hidden>
   </div>
+</dialog>
+<dialog id="ask-panel" aria-labelledby="ask-title">
+  <form method="dialog">
+    <div class="settings-head"><h2 id="ask-title"></h2></div>
+    <div class="settings-body">
+      <p id="ask-message"></p>
+      <input id="ask-input" class="ask-input" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+      <div class="ask-actions">
+        <button id="ask-ok" value="ok">OK</button>
+        <button class="cancel" value="cancel" formnovalidate>Cancel</button>
+      </div>
+    </div>
+  </form>
 </dialog>
 <dialog id="settings-panel" aria-labelledby="settings-title">
   <div class="settings-head">
@@ -754,7 +791,15 @@ async function start() {
 
 let filesRoot = null;
 let filesPath = [];
+let pathStyle = null;
+let fileClip = null;
+let fileBusy = false;
+const selected = new Set();
+const pathStyles = [p => p, p => "/" + p, p => p.replace(/\//g, "\\"), p => "C:\\" + p.replace(/\//g, "\\")];
+const fsp = parts => pathStyles[pathStyle === null ? 0 : pathStyle](parts.join("/"));
+const toBuf = d => d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength);
 const fmtSize = n => n == null ? "" : n < 1024 ? n + " B" : n < 1048576 ? (n / 1024).toFixed(1) + " KB" : (n / 1048576).toFixed(1) + " MB";
+const fstatus = msg => { el("files-status").textContent = msg || ""; };
 const saveBlob = (bytes, name) => {
   const url = URL.createObjectURL(new Blob([bytes], { type: "application/octet-stream" }));
   const a = document.createElement("a");
@@ -768,11 +813,63 @@ const saveBlob = (bytes, name) => {
 const nodeAt = path => {
   let node = filesRoot;
   for (const name of path) {
-    node = node && node.nodes ? node.nodes.find(n => n.name === name) : null;
+    node = node && node.nodes ? node.nodes.find(n => n.name.toLowerCase() === name.toLowerCase()) : null;
     if (!node) return null;
   }
   return node;
 };
+const collect = (node, base, files, dirs) => {
+  if (node.nodes) {
+    node.nodes.forEach(n => collect(n, [...base, n.name], files, dirs));
+    dirs.push(base);
+  } else files.push(base);
+};
+const dosName = /^[A-Za-z0-9_$~!#%&'()@^{}`-]{1,8}(\.[A-Za-z0-9_$~!#%&'()@^{}`-]{0,3})?$/;
+const cleanPart = (t, n) => t.toUpperCase().replace(/[^A-Z0-9_$~-]/g, "").slice(0, n);
+const toDosName = name => {
+  const i = name.lastIndexOf(".");
+  const base = cleanPart(i > 0 ? name.slice(0, i) : name, 8) || "FILE";
+  const ext = i > 0 ? cleanPart(name.slice(i + 1), 3) : "";
+  return ext ? base + "." + ext : base;
+};
+const sleepMs = ms => new Promise(r => setTimeout(r, ms));
+
+const ask = ({ title, message = "", input = false, value = "", ok = "OK", danger = false }) => new Promise(resolve => {
+  const dlg = el("ask-panel");
+  const field = el("ask-input");
+  el("ask-title").textContent = title;
+  el("ask-message").textContent = message;
+  el("ask-message").hidden = !message;
+  field.hidden = !input;
+  field.value = value;
+  el("ask-ok").textContent = ok;
+  el("ask-ok").classList.toggle("danger", danger);
+  const done = () => {
+    dlg.removeEventListener("close", done);
+    resolve(dlg.returnValue === "ok" ? (input ? field.value.trim() : true) : null);
+  };
+  dlg.returnValue = "cancel";
+  dlg.addEventListener("close", done);
+  dlg.showModal();
+  if (input) { field.focus(); field.select(); }
+});
+
+const syncActions = () => {
+  const n = selected.size;
+  const set = (id, on) => { el(id).disabled = fileBusy || !on; };
+  set("f-upload", true);
+  set("f-newdir", true);
+  set("f-download", n > 0);
+  set("f-rename", n === 1);
+  set("f-cut", n > 0);
+  set("f-copy", n > 0);
+  set("f-paste", !!fileClip);
+  set("f-delete", n > 0);
+  set("f-all", true);
+  el("files-refresh").disabled = fileBusy;
+  el("files-zip").disabled = fileBusy;
+};
+
 const renderFiles = () => {
   let node = nodeAt(filesPath);
   if (!node || !node.nodes) { filesPath = []; node = filesRoot; }
@@ -782,7 +879,7 @@ const renderFiles = () => {
     const b = document.createElement("button");
     b.type = "button";
     b.textContent = label;
-    b.onclick = () => { filesPath = filesPath.slice(0, depth); renderFiles(); };
+    b.onclick = () => { filesPath = filesPath.slice(0, depth); selected.clear(); renderFiles(); };
     bar.appendChild(b);
   };
   crumb("C:", 0);
@@ -790,51 +887,62 @@ const renderFiles = () => {
   const list = el("files-list");
   list.innerHTML = "";
   const items = node && node.nodes ? [...node.nodes].sort((a, b) => (!!b.nodes - !!a.nodes) || a.name.localeCompare(b.name)) : [];
+  [...selected].forEach(name => { if (!items.some(i => i.name === name)) selected.delete(name); });
   if (!items.length) {
     const empty = document.createElement("div");
     empty.className = "files-empty";
-    empty.textContent = "Empty";
+    empty.textContent = "Empty folder";
     list.appendChild(empty);
-    return;
   }
+  const cutKeys = fileClip && fileClip.move ? new Set(fileClip.items.map(p => p.join("/"))) : new Set();
   for (const item of items) {
-    const row = document.createElement("div");
     const isDir = !!item.nodes;
-    row.className = "files-row" + (isDir ? " dir" : "");
+    const row = document.createElement("div");
+    row.className = "files-row" + (selected.has(item.name) ? " sel" : "") + (cutKeys.has([...filesPath, item.name].join("/")) ? " cut" : "");
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = selected.has(item.name);
+    const toggle = () => {
+      if (selected.has(item.name)) selected.delete(item.name); else selected.add(item.name);
+      renderFiles();
+    };
+    box.onclick = event => { event.stopPropagation(); toggle(); };
     const name = document.createElement("span");
     name.className = "name";
     name.textContent = (isDir ? "\u{1F4C1} " : "") + item.name;
-    row.appendChild(name);
+    row.append(box, name);
     if (isDir) {
-      row.onclick = () => { filesPath = [...filesPath, item.name]; renderFiles(); };
+      name.onclick = event => { event.stopPropagation(); filesPath = [...filesPath, item.name]; selected.clear(); renderFiles(); };
     } else {
       const meta = document.createElement("span");
       meta.className = "meta";
       meta.textContent = fmtSize(item.size);
-      const dl = document.createElement("button");
-      dl.type = "button";
-      dl.textContent = "Download";
-      dl.onclick = () => downloadFile([...filesPath, item.name], item.name);
-      row.append(meta, dl);
+      row.appendChild(meta);
     }
+    row.onclick = toggle;
     list.appendChild(row);
   }
+  syncActions();
 };
-const downloadFile = async (parts, name) => {
-  if (!ci) return;
-  const rel = parts.join("/");
-  for (const candidate of [rel, "/" + rel, rel.replace(/\//g, "\\"), "C:\\" + rel.replace(/\//g, "\\")]) {
+
+const detectStyle = async () => {
+  const files = [];
+  collect(filesRoot, [], files, []);
+  const probe = files.find(f => (nodeAt(f) || {}).size > 0);
+  if (!probe) return;
+  const size = nodeAt(probe).size;
+  for (let i = 0; i < pathStyles.length; i += 1) {
     try {
-      const data = await ci.fsReadFile(candidate);
-      if (data) { saveBlob(data, name); return; }
+      const d = await ci.fsReadFile(pathStyles[i](probe.join("/")));
+      if (d && d.length === size) { pathStyle = i; return; }
     } catch {}
   }
-  showToast("Could not read " + name);
 };
 const loadFiles = async () => {
   if (!ci) return;
   try {
     filesRoot = await ci.fsTree();
+    if (pathStyle === null) await detectStyle();
     renderFiles();
   } catch (e) {
     el("files-list").innerHTML = "";
@@ -844,22 +952,188 @@ const loadFiles = async () => {
     el("files-list").appendChild(err);
   }
 };
-el("files-open").onclick = () => { el("files-panel").showModal(); loadFiles(); };
+const runOp = async (label, fn) => {
+  if (fileBusy || !ci) return;
+  fileBusy = true;
+  fstatus(label + "\u2026");
+  syncActions();
+  let result = "";
+  try { result = (await fn()) || ""; } catch (e) { result = "Failed: " + ((e && e.message) || label); }
+  try { await player.save(); } catch {}
+  fileBusy = false;
+  await loadFiles();
+  fstatus(result || "Done");
+};
+
+const readFileAt = async parts => {
+  const d = await ci.fsReadFile(fsp(parts));
+  if (!d) throw new Error("Could not read " + parts[parts.length - 1]);
+  return d;
+};
+const writeFileAt = (parts, data) => ci.fsWriteFile(fsp(parts), toBuf(data));
+const removeNode = async parts => {
+  const node = nodeAt(parts);
+  if (!node) return;
+  const files = [];
+  const dirs = [];
+  collect(node, parts, files, dirs);
+  for (const f of files) await ci.fsDeleteFile(fsp(f));
+  for (const d of dirs) { try { await ci.fsDeleteFile(fsp(d)); } catch {} }
+};
+const transfer = async (src, dest, move) => {
+  const node = nodeAt(src);
+  if (!node) return 0;
+  const files = [];
+  collect(node, src, files, []);
+  for (const f of files) {
+    const target = [...dest, ...f.slice(src.length)];
+    await writeFileAt(target, await readFileAt(f));
+  }
+  if (move) await removeNode(src);
+  return files.length;
+};
+const sameOrInside = (parent, child) => child.length >= parent.length && parent.every((p, i) => p.toLowerCase() === child[i].toLowerCase());
+
+const downloadSelected = () => runOp("Downloading", async () => {
+  let skipped = 0;
+  let count = 0;
+  for (const name of [...selected]) {
+    const parts = [...filesPath, name];
+    const node = nodeAt(parts);
+    if (!node) continue;
+    if (node.nodes) { skipped += 1; continue; }
+    saveBlob(await readFileAt(parts), name);
+    count += 1;
+    await sleepMs(350);
+  }
+  return count + " downloaded" + (skipped ? ", " + skipped + " folder(s) skipped (use Download changes .zip)" : "");
+});
+const renameSelected = async () => {
+  const [old] = [...selected];
+  const value = await ask({ title: "Rename", message: "DOS names only: up to 8 characters, optional 3-character extension.", input: true, value: old, ok: "Rename" });
+  if (!value || value === old) return;
+  if (!dosName.test(value)) { fstatus("Invalid DOS name: " + value); return; }
+  const dest = [...filesPath, value];
+  if (nodeAt(dest) && value.toLowerCase() !== old.toLowerCase()) { fstatus(value + " already exists"); return; }
+  runOp("Renaming", async () => {
+    if (value.toLowerCase() === old.toLowerCase()) {
+      const tmp = [...filesPath, "RN" + Date.now().toString(36).slice(-6).toUpperCase()];
+      await transfer([...filesPath, old], tmp, true);
+      await transfer(tmp, dest, true);
+    } else await transfer([...filesPath, old], dest, true);
+    selected.clear();
+    return "Renamed to " + value;
+  });
+};
+const newFolder = async () => {
+  const value = await ask({ title: "New folder", message: "DOS names only: up to 8 characters.", input: true, value: "", ok: "Create" });
+  if (!value) return;
+  if (!dosName.test(value)) { fstatus("Invalid DOS name: " + value); return; }
+  const dir = [...filesPath, value];
+  if (nodeAt(dir)) { fstatus(value + " already exists"); return; }
+  runOp("Creating folder", async () => {
+    const marker = [...dir, "EMPTY.TMP"];
+    await writeFileAt(marker, new Uint8Array(0));
+    await ci.fsDeleteFile(fsp(marker));
+    filesRoot = await ci.fsTree();
+    if (nodeAt(dir)) return "Created " + value;
+    await writeFileAt(marker, new Uint8Array(0));
+    return "Created " + value + " with a placeholder EMPTY.TMP (this emulator drops empty folders). Delete it after adding files.";
+  });
+};
+const deleteSelected = async () => {
+  const names = [...selected];
+  const ok = await ask({ title: "Delete", message: "Delete " + (names.length === 1 ? names[0] : names.length + " items") + "? This cannot be undone.", ok: "Delete", danger: true });
+  if (!ok) return;
+  runOp("Deleting", async () => {
+    for (const name of names) await removeNode([...filesPath, name]);
+    selected.clear();
+    return "Deleted " + names.length + " item(s)";
+  });
+};
+const setClip = move => {
+  fileClip = { move, items: [...selected].map(n => [...filesPath, n]) };
+  selected.clear();
+  fstatus((move ? "Cut " : "Copied ") + fileClip.items.length + " item(s). Open the destination folder and tap Paste.");
+  renderFiles();
+};
+const pasteClip = async () => {
+  if (!fileClip) return;
+  const clip = fileClip;
+  const jobs = clip.items.filter(src => nodeAt(src)).map(src => ({ src, dest: [...filesPath, src[src.length - 1]] }));
+  if (!jobs.length) { fstatus("Nothing to paste"); fileClip = null; renderFiles(); return; }
+  for (const j of jobs) {
+    if (j.src.join("/").toLowerCase() === j.dest.join("/").toLowerCase()) { fstatus("Source and destination are the same"); return; }
+    if (nodeAt(j.src).nodes && sameOrInside(j.src, filesPath)) { fstatus("Cannot paste a folder into itself"); return; }
+  }
+  const clashes = jobs.filter(j => nodeAt(j.dest));
+  if (clashes.length) {
+    const ok = await ask({ title: "Overwrite?", message: clashes.map(j => j.dest[j.dest.length - 1]).join(", ") + " already exist here. Replace?", ok: "Replace", danger: true });
+    if (!ok) return;
+  }
+  runOp(clip.move ? "Moving" : "Copying", async () => {
+    let total = 0;
+    for (const j of jobs) {
+      const existing = nodeAt(j.dest);
+      if (existing && !existing.nodes && !nodeAt(j.src).nodes) await ci.fsDeleteFile(fsp(j.dest));
+      total += await transfer(j.src, j.dest, clip.move);
+    }
+    if (clip.move) fileClip = null;
+    return (clip.move ? "Moved " : "Copied ") + total + " file(s)";
+  });
+};
+const uploadFiles = async list => {
+  const files = [...list];
+  if (!files.length) return;
+  const renamed = [];
+  const plan = files.map(f => {
+    const name = dosName.test(f.name) ? f.name.toUpperCase() : toDosName(f.name);
+    if (name !== f.name) renamed.push(f.name + " \u2192 " + name);
+    return { f, name };
+  });
+  const clashes = plan.filter(p => nodeAt([...filesPath, p.name]));
+  if (clashes.length) {
+    const ok = await ask({ title: "Overwrite?", message: clashes.map(p => p.name).join(", ") + " already exist here. Replace?", ok: "Replace", danger: true });
+    if (!ok) return;
+  }
+  runOp("Uploading", async () => {
+    for (const p of plan) {
+      const target = [...filesPath, p.name];
+      const existing = nodeAt(target);
+      if (existing && !existing.nodes) await ci.fsDeleteFile(fsp(target));
+      await writeFileAt(target, new Uint8Array(await p.f.arrayBuffer()));
+    }
+    return "Uploaded " + plan.length + " file(s)" + (renamed.length ? ". Renamed for DOS: " + renamed.join(", ") : "");
+  });
+};
+
+el("f-upload").onclick = () => el("f-upload-input").click();
+el("f-upload-input").onchange = event => { uploadFiles(event.target.files); event.target.value = ""; };
+el("f-newdir").onclick = newFolder;
+el("f-download").onclick = downloadSelected;
+el("f-rename").onclick = renameSelected;
+el("f-cut").onclick = () => setClip(true);
+el("f-copy").onclick = () => setClip(false);
+el("f-paste").onclick = pasteClip;
+el("f-delete").onclick = deleteSelected;
+el("f-all").onclick = () => {
+  const node = nodeAt(filesPath);
+  const names = node && node.nodes ? node.nodes.map(n => n.name) : [];
+  if (names.length && names.every(n => selected.has(n))) selected.clear(); else names.forEach(n => selected.add(n));
+  renderFiles();
+};
+el("files-open").onclick = () => { selected.clear(); fstatus(""); el("files-panel").showModal(); loadFiles(); };
 el("files-close").onclick = () => el("files-panel").close();
-el("files-refresh").onclick = loadFiles;
+el("files-refresh").onclick = () => { fstatus(""); loadFiles(); };
 el("files-panel").onclick = event => {
   if (event.target === el("files-panel")) el("files-panel").close();
 };
-el("files-zip").onclick = async () => {
-  if (!ci) return;
-  try {
-    const data = await ci.persist(true);
-    if (data) saveBlob(data, "turboc-changes.zip");
-    else showToast("No changes to download");
-  } catch (e) {
-    showToast("Could not export changes");
-  }
-};
+el("files-zip").onclick = () => runOp("Exporting", async () => {
+  const data = await ci.persist(true);
+  if (!data) return "No changes to download";
+  saveBlob(data, "turboc-changes.zip");
+  return "Exported turboc-changes.zip";
+});
 
 el("settings-open").onclick = () => el("settings-panel").showModal();
 el("settings-close").onclick = () => el("settings-panel").close();
@@ -1130,4 +1404,4 @@ start();
 })();
 </script>
 </body>
-  </html>
+</html>
